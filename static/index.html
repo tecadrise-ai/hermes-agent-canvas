@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hermes Canvas</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/style.css?v=20260722o" />
+  </head>
+  <body>
+    <div class="app" id="app">
+      <header class="tabs-bar">
+        <div class="tabs-scroll" id="tabs-scroll" title="Scroll tabs with mouse wheel">
+          <div class="tabs" id="tabs" role="tablist" aria-label="Agents"></div>
+        </div>
+        <button type="button" class="tab-add" id="tab-add" title="Create Hermes profile on remote host" aria-label="Create Hermes profile">+</button>
+        <button
+          type="button"
+          class="tab-gateway"
+          id="tab-gateway"
+          title="Gateway connection"
+          aria-label="Gateway connection"
+          data-state="idle"
+        >
+          <svg class="tab-gateway-icon" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+            <circle cx="5" cy="5" r="2.2" fill="currentColor" />
+            <circle cx="15" cy="5" r="2.2" fill="currentColor" />
+            <circle cx="10" cy="15" r="2.2" fill="currentColor" />
+            <path
+              d="M5 7.2v2.1c0 1.2.8 2.2 1.9 2.5L10 12.8l3.1-1c1.1-.3 1.9-1.3 1.9-2.5V7.2"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+          </svg>
+          <span class="tab-gateway-dot" aria-hidden="true"></span>
+        </button>
+      </header>
+
+      <div class="workspace" id="workspace">
+        <aside class="side-menu" id="side-menu" data-collapsed="false">
+          <div class="side-menu-chrome">
+            <button
+              type="button"
+              class="side-toggle"
+              id="side-toggle"
+              title="Collapse menu"
+              aria-label="Collapse menu"
+              aria-expanded="true"
+            >
+              &lt;&lt;
+            </button>
+            <span class="side-menu-title" id="side-menu-title">Menu</span>
+          </div>
+          <nav class="side-menu-body" id="side-menu-body" aria-label="Agent menu"></nav>
+        </aside>
+
+        <div class="main-split" id="main-split">
+          <section class="canvas-pane" id="canvas-pane" aria-label="Agent canvas">
+            <div class="canvas-viewport" id="canvas-viewport">
+              <div class="canvas-world" id="canvas-world">
+                <div class="canvas-grid" id="canvas-grid" aria-hidden="true"></div>
+                <svg class="canvas-edges" id="canvas-edges" aria-hidden="true"></svg>
+                <div class="canvas-nodes" id="canvas-nodes"></div>
+                <svg class="canvas-edges canvas-edges-task" id="canvas-edges-task" aria-hidden="true"></svg>
+              </div>
+            </div>
+            <div class="block-editor" id="block-editor" hidden>
+              <header class="block-editor-header">
+                <button type="button" class="block-editor-back" id="block-editor-back" title="Back to canvas">
+                  ← Canvas
+                </button>
+                <div class="block-editor-title-wrap">
+                  <h2 class="block-editor-title" id="block-editor-title">CONFIG</h2>
+                  <p class="block-editor-path" id="block-editor-path"></p>
+                </div>
+                <div class="block-editor-actions">
+                  <button type="button" class="block-editor-advanced" id="block-editor-advanced" hidden>
+                    Advanced
+                  </button>
+                  <button type="button" class="block-editor-reload" id="block-editor-reload">Reload</button>
+                  <button type="button" class="block-editor-save" id="block-editor-save">Save</button>
+                </div>
+              </header>
+              <div class="block-editor-main" id="block-editor-main">
+                <div class="cfg-panel" id="cfg-panel" hidden>
+                  <aside class="cfg-nav" id="cfg-nav" aria-label="Config sections"></aside>
+                  <div class="cfg-content">
+                    <div class="cfg-toolbar">
+                      <input
+                        type="search"
+                        class="cfg-search"
+                        id="cfg-search"
+                        placeholder="Filter fields…"
+                        autocomplete="off"
+                      />
+                      <span class="cfg-section-label" id="cfg-section-label"></span>
+                    </div>
+                    <div class="cfg-fields" id="cfg-fields"></div>
+                  </div>
+                </div>
+                <div class="sec-panel" id="sec-panel" hidden>
+                  <aside class="cfg-nav" id="sec-nav" aria-label="Secret groups"></aside>
+                  <div class="cfg-content">
+                    <div class="cfg-toolbar sec-toolbar">
+                      <input
+                        type="search"
+                        class="cfg-search"
+                        id="sec-search"
+                        placeholder="Filter keys…"
+                        autocomplete="off"
+                      />
+                      <label class="sec-check">
+                        <input type="checkbox" id="sec-set-only" checked />
+                        Set only
+                      </label>
+                      <span class="cfg-section-label" id="sec-section-label"></span>
+                    </div>
+                    <div class="sec-fields" id="sec-fields"></div>
+                    <div class="sec-add">
+                      <input
+                        type="text"
+                        class="sec-add-key"
+                        id="sec-new-key"
+                        placeholder="NEW_KEY"
+                        spellcheck="false"
+                        autocomplete="off"
+                      />
+                      <input
+                        type="password"
+                        class="sec-add-val"
+                        id="sec-new-val"
+                        placeholder="value"
+                        autocomplete="off"
+                      />
+                      <button type="button" class="sec-add-btn" id="sec-add-btn">Add</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="sk-panel" id="sk-panel" hidden>
+                  <div class="sk-mode-tabs" id="sk-mode-tabs">
+                    <button type="button" class="sk-mode-tab" data-sk-mode="installed" aria-current="true">
+                      Installed
+                    </button>
+                    <button type="button" class="sk-mode-tab" data-sk-mode="hub">Hub</button>
+                  </div>
+                  <div class="sk-installed" id="sk-installed">
+                    <aside class="cfg-nav" id="sk-nav" aria-label="Skill categories"></aside>
+                    <div class="cfg-content">
+                      <div class="cfg-toolbar sec-toolbar">
+                        <input
+                          type="search"
+                          class="cfg-search"
+                          id="sk-search"
+                          placeholder="Filter skills…"
+                          autocomplete="off"
+                        />
+                        <label class="sec-check">
+                          <input type="checkbox" id="sk-enabled-only" />
+                          Enabled only
+                        </label>
+                        <button type="button" class="sk-bulk-btn" id="sk-all-on">All on</button>
+                        <button type="button" class="sk-bulk-btn" id="sk-all-off">All off</button>
+                        <span class="cfg-section-label" id="sk-section-label"></span>
+                      </div>
+                      <div class="sk-fields" id="sk-fields"></div>
+                    </div>
+                  </div>
+                  <div class="sk-hub" id="sk-hub" hidden>
+                    <div class="cfg-toolbar sec-toolbar">
+                      <input
+                        type="search"
+                        class="cfg-search"
+                        id="sk-hub-q"
+                        placeholder="Search skill hub…"
+                        autocomplete="off"
+                      />
+                      <button type="button" class="sec-add-btn" id="sk-hub-search-btn">Search</button>
+                    </div>
+                    <div class="sk-hub-results" id="sk-hub-results"></div>
+                  </div>
+                </div>
+                <div class="mem-tabs" id="mem-tabs" hidden>
+                  <button type="button" class="mem-tab" data-mem-file="MEMORY.md" aria-current="true">
+                    MEMORY.md
+                  </button>
+                  <button type="button" class="mem-tab" data-mem-file="USER.md">USER.md</button>
+                </div>
+                <textarea
+                  class="block-editor-text"
+                  id="block-editor-text"
+                  spellcheck="false"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  placeholder="Loading…"
+                  hidden
+                ></textarea>
+              </div>
+              <div class="block-editor-status" id="block-editor-status" aria-live="polite"></div>
+            </div>
+          </section>
+
+          <div
+            class="split-handle"
+            id="split-handle"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize chat"
+            tabindex="0"
+          ></div>
+
+          <section class="chat-pane" id="chat-pane" aria-label="Agent chat">
+            <div class="messages" id="messages" role="log" aria-live="polite"></div>
+            <div class="composer">
+              <div class="composer-row">
+                <textarea
+                  id="composer-input"
+                  rows="2"
+                  placeholder="Message… (Enter to send, Shift+Enter for newline)"
+                ></textarea>
+                <button type="button" id="send-btn">Send</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+    <div class="ctx-menu" id="ctx-menu" hidden role="menu">
+      <button type="button" class="ctx-item" id="ctx-hide" role="menuitem">Hide</button>
+    </div>
+
+    <div class="modal-backdrop" id="gateway-modal" hidden>
+      <div
+        class="modal gateway-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="gateway-modal-title"
+      >
+        <header class="modal-header">
+          <div>
+            <h2 id="gateway-modal-title">Gateway Connection</h2>
+            <p class="modal-intro">
+              Same as Hermes Desktop → Settings → Gateway → Remote connection: attach Canvas to an
+              already-running Hermes dashboard/backend with a base URL and session token. The
+              backend can be on 127.0.0.1 or any remote host. Canvas does not start it.
+            </p>
+          </div>
+          <button type="button" class="modal-close" id="gateway-modal-close" aria-label="Close">
+            x
+          </button>
+        </header>
+
+        <div class="modal-body" id="gateway-modal-body">
+          <div class="gw-scope" id="gw-scope">
+            <div class="gw-label">Applies to</div>
+            <div class="gw-chips" id="gw-scope-chips"></div>
+            <p class="gw-hint" id="gw-scope-hint"></p>
+          </div>
+
+          <div class="gw-modes" id="gw-modes" hidden>
+            <button type="button" class="gw-mode-card" data-mode="remote" id="gw-mode-local" hidden>
+              <div class="gw-mode-title">Local gateway</div>
+              <p class="gw-mode-desc">Unused. Canvas always uses remote attach.</p>
+            </button>
+            <button type="button" class="gw-mode-card" data-mode="remote" id="gw-mode-remote" hidden>
+              <div class="gw-mode-title">Remote gateway</div>
+              <p class="gw-mode-desc">
+                Connect to a Hermes dashboard. Hosted gateways use OAuth; self-hosted use a session
+                token.
+              </p>
+            </button>
+          </div>
+
+          <div class="gw-field">
+            <div class="gw-field-head">
+              <div class="gw-label">Remote URL</div>
+              <p class="gw-hint">
+                Base URL of the Hermes dashboard backend (e.g. http://127.0.0.1:9119 or
+                http://100.x.y.z:9119). Path prefixes ok, e.g. /hermes.
+              </p>
+            </div>
+            <input
+              type="url"
+              id="gw-remote-url"
+              class="gw-input"
+              placeholder="https://gateway.example.com/hermes"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+
+          <div class="gw-probe" id="gw-probe" hidden></div>
+
+          <div class="gw-field" id="gw-auth-oauth" hidden>
+            <div class="gw-field-head">
+              <div class="gw-label">Authentication</div>
+              <p class="gw-hint" id="gw-oauth-hint"></p>
+            </div>
+            <div class="gw-auth-row">
+              <button type="button" class="btn" id="gw-oauth-open">Open sign-in</button>
+              <span class="gw-pill" id="gw-oauth-pill" hidden>OAuth gateway</span>
+            </div>
+            <p class="gw-hint">
+              Browser OAuth cookies stay on the gateway origin. Prefer a session token for Canvas,
+              or paste one after signing in on the gateway UI.
+            </p>
+          </div>
+
+          <div class="gw-field" id="gw-auth-token" hidden>
+            <div class="gw-field-head">
+              <div class="gw-label">Session token</div>
+              <p class="gw-hint">
+                Dashboard session token for REST and WebSocket. Leave blank to keep the saved token.
+              </p>
+            </div>
+            <input
+              type="password"
+              id="gw-remote-token"
+              class="gw-input gw-mono"
+              placeholder="Paste session token"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+
+          <p class="gw-status" id="gw-status" hidden></p>
+        </div>
+
+        <footer class="modal-footer">
+          <button type="button" class="btn btn-ghost" id="gw-test" disabled>Test remote</button>
+          <div class="modal-footer-right">
+            <button type="button" class="btn btn-ghost" id="gw-save">Save</button>
+            <button type="button" class="btn btn-primary" id="gw-save-reconnect">Save and reconnect</button>
+          </div>
+        </footer>
+      </div>
+    </div>
+
+    <script src="/static/app.js?v=20260722o"></script>
+  </body>
+</html>
