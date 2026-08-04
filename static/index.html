@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/style.css?v=20260804ad" />
+    <link rel="stylesheet" href="/static/style.css?v=20260804ae" />
   </head>
   <body>
     <div class="app" id="app">
@@ -254,6 +254,35 @@
                         card and platform CLI.
                       </p>
                       <div class="sk-fields" id="tools-fields"></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="conn-panel" id="conn-panel" hidden>
+                  <aside class="cfg-nav" id="conn-nav" aria-label="Messaging platforms"></aside>
+                  <div class="cfg-content">
+                    <div class="cfg-toolbar trg-toolbar">
+                      <button type="button" class="sk-bulk-btn" id="conn-test">Test</button>
+                      <button type="button" class="sk-bulk-btn" id="conn-filter-cfg">Configured</button>
+                      <span class="cfg-section-label" id="conn-section-label"></span>
+                    </div>
+                    <div class="conn-form" id="conn-form">
+                      <div class="conn-head">
+                        <h3 class="tools-heading" id="conn-name">Select a platform</h3>
+                        <a class="conn-docs" id="conn-docs" href="#" target="_blank" rel="noopener" hidden>Docs</a>
+                      </div>
+                      <p class="tools-hint" id="conn-desc"></p>
+                      <div class="conn-meta" id="conn-meta"></div>
+                      <label class="sec-check trg-enabled">
+                        <input type="checkbox" id="conn-enabled" />
+                        Enable platform
+                      </label>
+                      <p class="trg-hint" id="conn-home" hidden></p>
+                      <div class="conn-fields" id="conn-fields"></div>
+                      <p class="trg-hint">
+                        Leave a secret blank to keep the existing value. Use Clear to remove a key from
+                        the profile <code>.env</code>. After enabling, restart the gateway if state stays
+                        <code>pending_restart</code>.
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -583,6 +612,6 @@
 
     <script src="/static/vendor/marked.min.js"></script>
     <script src="/static/vendor/purify.min.js"></script>
-    <script src="/static/app.js?v=20260804ad"></script>
+    <script src="/static/app.js?v=20260804ae"></script>
   </body>
 </html>

@@ -59,6 +59,18 @@
   const elToolsVisionProvider = document.getElementById("tools-vision-provider");
   const elToolsVisionModel = document.getElementById("tools-vision-model");
   const elToolsImageMode = document.getElementById("tools-image-mode");
+  const elConnPanel = document.getElementById("conn-panel");
+  const elConnNav = document.getElementById("conn-nav");
+  const elConnSectionLabel = document.getElementById("conn-section-label");
+  const elConnTest = document.getElementById("conn-test");
+  const elConnFilterCfg = document.getElementById("conn-filter-cfg");
+  const elConnName = document.getElementById("conn-name");
+  const elConnDocs = document.getElementById("conn-docs");
+  const elConnDesc = document.getElementById("conn-desc");
+  const elConnMeta = document.getElementById("conn-meta");
+  const elConnEnabled = document.getElementById("conn-enabled");
+  const elConnHome = document.getElementById("conn-home");
+  const elConnFields = document.getElementById("conn-fields");
   const elTrgPanel = document.getElementById("trg-panel");
   const elTrgNav = document.getElementById("trg-nav");
   const elTrgForm = document.getElementById("trg-form");
@@ -3147,6 +3159,13 @@
     cronDirty: false,
     includeCanvasTasks: false,
     toolsEnabled: null, // Set of enabled toolset ids
+    connPlatforms: [],
+    connSelectedId: null,
+    connBaseline: "",
+    connDrafts: {}, // key -> new value (empty = unchanged)
+    connClear: {}, // key -> true when marked for clear
+    connConfiguredOnly: false,
+    connGatewayCmd: "",
   };
 
   // Hermes toolsets commonly needed for Canvas chat / vision / research.
@@ -3300,6 +3319,7 @@
       refreshMemoryLabel(id),
       refreshSkillsLabel(id),
       refreshToolsLabel(id),
+      refreshConnectorsLabel(id),
       refreshTriggerLabel(id),
     ]);
   }
@@ -3909,6 +3929,9 @@
       } catch (_) {
         return true;
       }
+    }
+    if (blockEditor.kind === "connectors") {
+      return snapshotConnectorsDraft() !== blockEditor.connBaseline;
     }
     if (blockEditor.kind === "config" && blockEditor.mode === "form") {
       try {
@@ -4569,6 +4592,394 @@
     );
   }
 
+  function connectorsPreviewText(platforms) {
+    const list = Array.isArray(platforms) ? platforms : [];
+    const enabled = list.filter((p) => p && p.enabled);
+    const connected = enabled.filter((p) => p.state === "connected");
+    if (!list.length) return "no platforms";
+    if (!enabled.length) return "0 / " + list.length + " enabled";
+    const names = enabled
+      .slice(0, 3)
+      .map((p) => p.id || p.name)
+      .filter(Boolean);
+    let next = enabled.length + " enabled";
+    if (connected.length) next += " · " + connected.length + " connected";
+    if (names.length) next += " · " + names.join(", ");
+    if (enabled.length > names.length) next += "…";
+    return next;
+  }
+
+  function applyConnectorsPreview(agentId, platforms) {
+    const agent = agents.find((a) => a.id === agentId);
+    if (!agent) return;
+    const node = agent.nodes.find((n) => n.id === "connectors");
+    if (!node) return;
+    const next = connectorsPreviewText(platforms);
+    if (node.body === next) return;
+    node.body = next;
+    if (agentId === activeId) renderCanvas();
+    saveLayouts();
+  }
+
+  async function refreshConnectorsLabel(agentId) {
+    const id = agentId || activeId;
+    if (!id || id === "_offline") return;
+    const agent = agents.find((a) => a.id === id);
+    if (!agent || !agent.nodes.some((n) => n.id === "connectors")) return;
+    try {
+      const q = "?profile=" + encodeURIComponent(id);
+      const res = await fetch("/api/remote/messaging/platforms" + q);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return;
+      applyConnectorsPreview(id, Array.isArray(data.platforms) ? data.platforms : []);
+    } catch (_) {}
+  }
+
+  function selectedConnector() {
+    const id = blockEditor.connSelectedId;
+    if (!id) return null;
+    return (blockEditor.connPlatforms || []).find((p) => p && p.id === id) || null;
+  }
+
+  function snapshotConnectorsDraft() {
+    const plat = selectedConnector();
+    if (!plat) return "";
+    const enabled = !!(elConnEnabled && elConnEnabled.checked);
+    const env = {};
+    const clear = [];
+    for (const key of Object.keys(blockEditor.connDrafts || {})) {
+      const val = String(blockEditor.connDrafts[key] || "");
+      if (val) env[key] = val;
+    }
+    for (const key of Object.keys(blockEditor.connClear || {})) {
+      if (blockEditor.connClear[key]) clear.push(key);
+    }
+    clear.sort();
+    try {
+      return JSON.stringify({ id: plat.id, enabled: enabled, env: env, clear: clear });
+    } catch (_) {
+      return String(Date.now());
+    }
+  }
+
+  function markConnectorDirty() {
+    // baseline comparison happens in isBlockEditorDirty
+  }
+
+  function isSecretEnvKey(key, info) {
+    if (info && info.password) return true;
+    const k = String(key || "").toUpperCase();
+    return /TOKEN|SECRET|PASSWORD|PASS|KEY|SID$|AES/.test(k);
+  }
+
+  function renderConnNav() {
+    if (!elConnNav) return;
+    elConnNav.innerHTML = "";
+    const configuredOnly = !!blockEditor.connConfiguredOnly;
+    const plats = (blockEditor.connPlatforms || []).filter((p) => {
+      if (!p || !p.id) return false;
+      if (configuredOnly && !(p.configured || p.enabled || (p.env_vars || []).some((v) => v && v.is_set))) {
+        return false;
+      }
+      return true;
+    });
+    for (const plat of plats) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "conn-nav-item" + (plat.enabled ? " is-on" : "");
+      btn.setAttribute("aria-current", plat.id === blockEditor.connSelectedId ? "true" : "false");
+      const name = document.createElement("span");
+      name.className = "conn-nav-name";
+      name.textContent = plat.name || plat.id;
+      const meta = document.createElement("span");
+      meta.className = "conn-nav-meta";
+      meta.textContent = String(plat.state || (plat.enabled ? "enabled" : "disabled")).replace(/_/g, " ");
+      btn.appendChild(name);
+      btn.appendChild(meta);
+      btn.addEventListener("click", () => {
+        if (plat.id === blockEditor.connSelectedId) return;
+        if (isBlockEditorDirty() && !window.confirm("Discard unsaved changes?")) return;
+        selectConnector(plat.id);
+      });
+      elConnNav.appendChild(btn);
+    }
+    if (elConnSectionLabel) {
+      const en = (blockEditor.connPlatforms || []).filter((p) => p && p.enabled).length;
+      elConnSectionLabel.textContent =
+        en + " enabled · " + plats.length + (configuredOnly ? " shown" : " platforms");
+    }
+    if (elConnFilterCfg) {
+      elConnFilterCfg.dataset.active = configuredOnly ? "1" : "0";
+      elConnFilterCfg.textContent = configuredOnly ? "Show all" : "Configured";
+    }
+  }
+
+  function selectConnector(platformId) {
+    blockEditor.connSelectedId = platformId || null;
+    blockEditor.connDrafts = {};
+    blockEditor.connClear = {};
+    renderConnNav();
+    renderConnForm();
+    blockEditor.connBaseline = snapshotConnectorsDraft();
+  }
+
+  function renderConnForm() {
+    const plat = selectedConnector();
+    if (!plat) {
+      if (elConnName) elConnName.textContent = "Select a platform";
+      if (elConnDesc) elConnDesc.textContent = "";
+      if (elConnMeta) elConnMeta.innerHTML = "";
+      if (elConnFields) elConnFields.innerHTML = "";
+      if (elConnEnabled) elConnEnabled.checked = false;
+      if (elConnHome) {
+        elConnHome.hidden = true;
+        elConnHome.textContent = "";
+      }
+      if (elConnDocs) elConnDocs.hidden = true;
+      return;
+    }
+    if (elConnName) elConnName.textContent = plat.name || plat.id;
+    if (elConnDesc) elConnDesc.textContent = plat.description || "";
+    if (elConnDocs) {
+      const url = String(plat.docs_url || "").trim();
+      if (url) {
+        elConnDocs.hidden = false;
+        elConnDocs.href = url;
+      } else {
+        elConnDocs.hidden = true;
+      }
+    }
+    if (elConnEnabled) elConnEnabled.checked = !!plat.enabled;
+    if (elConnMeta) {
+      elConnMeta.innerHTML = "";
+      const badge = document.createElement("span");
+      badge.className = "conn-badge";
+      const st = String(plat.state || "unknown");
+      badge.dataset.state = st;
+      badge.textContent = st.replace(/_/g, " ");
+      elConnMeta.appendChild(badge);
+      if (plat.configured) {
+        const c = document.createElement("span");
+        c.className = "conn-badge";
+        c.dataset.state = "connected";
+        c.textContent = "credentials ok";
+        elConnMeta.appendChild(c);
+      }
+      if (plat.error_message) {
+        const e = document.createElement("span");
+        e.className = "conn-badge";
+        e.dataset.state = "startup_failed";
+        e.textContent = String(plat.error_message).slice(0, 80);
+        elConnMeta.appendChild(e);
+      }
+    }
+    if (elConnHome) {
+      const hc = plat.home_channel;
+      if (hc && typeof hc === "object") {
+        const label = hc.name || hc.id || hc.chat_id || "";
+        elConnHome.hidden = !label;
+        elConnHome.textContent = label ? "Home channel: " + label : "";
+      } else {
+        elConnHome.hidden = true;
+        elConnHome.textContent = "";
+      }
+    }
+    if (!elConnFields) return;
+    elConnFields.innerHTML = "";
+    const vars = Array.isArray(plat.env_vars) ? plat.env_vars : [];
+    for (const info of vars) {
+      if (!info || !info.key) continue;
+      const key = info.key;
+      const wrap = document.createElement("div");
+      wrap.className = "conn-row";
+      const meta = document.createElement("div");
+      meta.className = "conn-row-meta";
+      const keyEl = document.createElement("div");
+      keyEl.className = "conn-row-key";
+      keyEl.textContent = key;
+      if (info.required) {
+        const req = document.createElement("span");
+        req.className = "conn-row-badge";
+        req.dataset.req = "1";
+        req.textContent = "required";
+        keyEl.appendChild(req);
+      }
+      const set = document.createElement("span");
+      set.className = "conn-row-badge";
+      set.dataset.set = info.is_set ? "1" : "0";
+      set.textContent = info.is_set
+        ? info.redacted_value
+          ? "set · " + info.redacted_value
+          : "set"
+        : "unset";
+      keyEl.appendChild(set);
+      meta.appendChild(keyEl);
+      const desc = String(info.description || info.prompt || "").trim();
+      if (desc) {
+        const d = document.createElement("p");
+        d.className = "conn-row-desc";
+        d.textContent = desc;
+        meta.appendChild(d);
+      }
+      wrap.appendChild(meta);
+      const input = document.createElement("input");
+      input.className = "conn-edit";
+      input.type = isSecretEnvKey(key, info) ? "password" : "text";
+      input.autocomplete = "off";
+      input.spellcheck = false;
+      input.placeholder = info.is_set ? "leave blank to keep" : "value";
+      input.value = blockEditor.connDrafts[key] || "";
+      if (blockEditor.connClear[key]) {
+        input.disabled = true;
+        input.placeholder = "(will clear on save)";
+      }
+      input.addEventListener("input", () => {
+        blockEditor.connDrafts[key] = input.value;
+        if (input.value) blockEditor.connClear[key] = false;
+        markConnectorDirty();
+      });
+      wrap.appendChild(input);
+      const clearBtn = document.createElement("button");
+      clearBtn.type = "button";
+      clearBtn.className = "conn-clear";
+      clearBtn.dataset.armed = blockEditor.connClear[key] ? "1" : "0";
+      clearBtn.textContent = blockEditor.connClear[key] ? "Undo clear" : "Clear";
+      clearBtn.addEventListener("click", () => {
+        if (blockEditor.connClear[key]) {
+          blockEditor.connClear[key] = false;
+        } else {
+          blockEditor.connClear[key] = true;
+          blockEditor.connDrafts[key] = "";
+        }
+        renderConnForm();
+        markConnectorDirty();
+      });
+      wrap.appendChild(clearBtn);
+      elConnFields.appendChild(wrap);
+    }
+  }
+
+  async function loadConnectorsContent(opts) {
+    const options = opts || {};
+    const profile = blockEditor.profile || activeId || null;
+    if (!profile || profile === "_offline") {
+      setBlockEditorStatus("No profile/tab selected.", "bad");
+      return;
+    }
+    blockEditor.busy = true;
+    if (elBlockEditorReload) elBlockEditorReload.disabled = true;
+    setBlockEditorStatus("Loading messaging platforms via gateway…", "");
+    try {
+      const q = "?profile=" + encodeURIComponent(profile);
+      const res = await fetch("/api/remote/messaging/platforms" + q);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || data.error || "Load failed");
+      const platforms = Array.isArray(data.platforms) ? data.platforms : [];
+      blockEditor.connPlatforms = platforms;
+      blockEditor.connGatewayCmd = String(data.gateway_start_command || "");
+      blockEditor.profile = profile;
+      blockEditor.mode = "connectors";
+      let keepId = options.keepSelection ? blockEditor.connSelectedId : null;
+      if (keepId && !platforms.some((p) => p && p.id === keepId)) keepId = null;
+      if (!keepId) {
+        const prefer = platforms.find((p) => p && p.enabled) || platforms[0];
+        keepId = prefer ? prefer.id : null;
+      }
+      selectConnector(keepId);
+      applyConnectorsPreview(profile, platforms);
+      if (elBlockEditorPath) {
+        const cmd = blockEditor.connGatewayCmd ? " · " + blockEditor.connGatewayCmd : "";
+        elBlockEditorPath.textContent =
+          "profile " + profile + " · " + platforms.length + " platforms" + cmd;
+        elBlockEditorPath.title = elBlockEditorPath.textContent;
+      }
+      setBlockEditorStatus("Loaded " + platforms.length + " messaging platforms.", "ok");
+    } catch (err) {
+      setBlockEditorStatus(String(err && err.message ? err.message : err), "bad");
+    } finally {
+      blockEditor.busy = false;
+      if (elBlockEditorSave) elBlockEditorSave.disabled = false;
+      if (elBlockEditorReload) elBlockEditorReload.disabled = false;
+    }
+  }
+
+  async function saveConnectorsContent() {
+    const profile = blockEditor.profile || activeId || null;
+    if (!profile) throw new Error("No profile/tab selected.");
+    const plat = selectedConnector();
+    if (!plat) throw new Error("Select a platform first.");
+    const enabled = !!(elConnEnabled && elConnEnabled.checked);
+    const env = {};
+    const clear_env = [];
+    for (const key of Object.keys(blockEditor.connDrafts || {})) {
+      const val = String(blockEditor.connDrafts[key] || "").trim();
+      if (val) env[key] = val;
+    }
+    for (const key of Object.keys(blockEditor.connClear || {})) {
+      if (blockEditor.connClear[key]) clear_env.push(key);
+    }
+    const q = "?profile=" + encodeURIComponent(profile);
+    const res = await fetch(
+      "/api/remote/messaging/platforms/" + encodeURIComponent(plat.id) + q,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: enabled,
+          env: env,
+          clear_env: clear_env,
+          profile: profile,
+        }),
+      }
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || data.error || "Save failed");
+    await loadConnectorsContent({ keepSelection: true });
+    setBlockEditorStatus(
+      "Saved " +
+        (plat.name || plat.id) +
+        ". Restart gateway if state is pending_restart" +
+        (blockEditor.connGatewayCmd ? " (" + blockEditor.connGatewayCmd + ")" : "") +
+        ".",
+      "ok"
+    );
+  }
+
+  async function testSelectedConnector() {
+    const profile = blockEditor.profile || activeId || null;
+    const plat = selectedConnector();
+    if (!profile || !plat) {
+      setBlockEditorStatus("Select a platform first.", "bad");
+      return;
+    }
+    if (isBlockEditorDirty()) {
+      setBlockEditorStatus("Save changes before testing.", "bad");
+      return;
+    }
+    blockEditor.busy = true;
+    setBlockEditorStatus("Testing " + (plat.name || plat.id) + "…", "");
+    try {
+      const q = "?profile=" + encodeURIComponent(profile);
+      const res = await fetch(
+        "/api/remote/messaging/platforms/" + encodeURIComponent(plat.id) + "/test" + q,
+        { method: "POST" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || data.error || "Test failed");
+      const ok = !!data.ok;
+      setBlockEditorStatus(
+        String(data.message || (ok ? "Connected." : "Not connected.")) +
+          (data.state ? " [" + data.state + "]" : ""),
+        ok ? "ok" : "bad"
+      );
+      await loadConnectorsContent({ keepSelection: true });
+    } catch (err) {
+      setBlockEditorStatus(String(err && err.message ? err.message : err), "bad");
+    } finally {
+      blockEditor.busy = false;
+    }
+  }
+
   async function loadSkillsContent(opts) {
     const options = opts || {};
     const profile = blockEditor.profile || activeId || null;
@@ -5131,17 +5542,21 @@
     const isSkills = kind === "skills";
     const isTrigger = kind === "trigger";
     const isTools = kind === "tools";
+    const isConnectors = kind === "connectors";
     const showForm = isConfig && mode === "form";
     const showSecrets = isSecrets;
     const showSkills = isSkills;
     const showTrigger = isTrigger;
     const showTools = isTools;
-    const showText = !showForm && !showSecrets && !showSkills && !showTrigger && !showTools;
+    const showConnectors = isConnectors;
+    const showText =
+      !showForm && !showSecrets && !showSkills && !showTrigger && !showTools && !showConnectors;
     if (elCfgPanel) elCfgPanel.hidden = !showForm;
     if (elSecPanel) elSecPanel.hidden = !showSecrets;
     if (elSkPanel) elSkPanel.hidden = !showSkills;
     if (elTrgPanel) elTrgPanel.hidden = !showTrigger;
     if (elToolsPanel) elToolsPanel.hidden = !showTools;
+    if (elConnPanel) elConnPanel.hidden = !showConnectors;
     if (elMemTabs) elMemTabs.hidden = !isMemory;
     if (elBlockEditorText) elBlockEditorText.hidden = !showText;
     if (elBlockEditorAdvanced) {
@@ -5559,6 +5974,7 @@
     else if (blockEditor.kind === "skills") await loadSkillsContent({ keepMode: true });
     else if (blockEditor.kind === "trigger") await loadTriggerContent({ keepSelection: true });
     else if (blockEditor.kind === "tools") await loadToolsContent();
+    else if (blockEditor.kind === "connectors") await loadConnectorsContent({ keepSelection: true });
     else if (blockEditor.kind === "config") {
       if (blockEditor.mode === "advanced") await loadTerminalConfigRaw();
       else await loadTerminalForm();
@@ -5620,6 +6036,13 @@
     blockEditor.cronBaseline = "";
     blockEditor.cronDirty = false;
     blockEditor.includeCanvasTasks = false;
+    blockEditor.connPlatforms = [];
+    blockEditor.connSelectedId = null;
+    blockEditor.connBaseline = "";
+    blockEditor.connDrafts = {};
+    blockEditor.connClear = {};
+    blockEditor.connConfiguredOnly = false;
+    blockEditor.connGatewayCmd = "";
     if (elCfgSearch) elCfgSearch.value = "";
     if (elSecSearch) elSecSearch.value = "";
     if (elSecSetOnly) elSecSetOnly.checked = true;
@@ -5629,6 +6052,9 @@
     if (elSkHubResults) elSkHubResults.innerHTML = "";
     if (elTrgNav) elTrgNav.innerHTML = "";
     if (elTrgSectionLabel) elTrgSectionLabel.textContent = "";
+    if (elConnNav) elConnNav.innerHTML = "";
+    if (elConnSectionLabel) elConnSectionLabel.textContent = "";
+    if (elConnFields) elConnFields.innerHTML = "";
     blockEditor.secretsSetOnly = true;
     setEditorChrome(null, "form");
     setBlockEditorStatus("");
@@ -5643,7 +6069,8 @@
       blockId !== "memory" &&
       blockId !== "skills" &&
       blockId !== "trigger" &&
-      blockId !== "tools"
+      blockId !== "tools" &&
+      blockId !== "connectors"
     ) {
       return;
     }
@@ -5663,13 +6090,21 @@
               ? "trigger"
               : blockId === "tools"
                 ? "tools"
-                : "text";
+                : blockId === "connectors"
+                  ? "connectors"
+                  : "text";
     if (blockId === "memory") blockEditor.memoryFile = "MEMORY.md";
     if (blockId === "skills") blockEditor.skillsMode = "installed";
     if (blockId === "trigger") {
       blockEditor.cronSelectedId = null;
       blockEditor.cronDirty = false;
       blockEditor.includeCanvasTasks = false;
+    }
+    if (blockId === "connectors") {
+      blockEditor.connSelectedId = null;
+      blockEditor.connDrafts = {};
+      blockEditor.connClear = {};
+      blockEditor.connConfiguredOnly = false;
     }
     if (elBlockEditorTitle) {
       elBlockEditorTitle.textContent =
@@ -5685,7 +6120,9 @@
                   ? "TRIGGER · Hermes cron"
                   : blockId === "tools"
                     ? "TOOLS · toolsets + aux vision"
-                    : "CONFIG · config.yaml";
+                    : blockId === "connectors"
+                      ? "CONNECTORS · messaging platforms"
+                      : "CONFIG · config.yaml";
     }
     if (elBlockEditorPath) elBlockEditorPath.textContent = "";
     elBlockEditor.hidden = false;
@@ -5699,6 +6136,7 @@
       blockEditor.mode !== "skills" &&
       blockEditor.mode !== "trigger" &&
       blockEditor.mode !== "tools" &&
+      blockEditor.mode !== "connectors" &&
       elBlockEditorText
     ) {
       elBlockEditorText.focus();
@@ -5712,7 +6150,8 @@
       blockEditor.kind !== "soul" &&
       blockEditor.kind !== "memory" &&
       blockEditor.kind !== "trigger" &&
-      blockEditor.kind !== "tools"
+      blockEditor.kind !== "tools" &&
+      blockEditor.kind !== "connectors"
     ) {
       return;
     }
@@ -5721,7 +6160,9 @@
     if (elBlockEditorSave) elBlockEditorSave.disabled = true;
     setBlockEditorStatus("Saving via gateway…", "");
     try {
-      if (blockEditor.kind === "tools") {
+      if (blockEditor.kind === "connectors") {
+        await saveConnectorsContent();
+      } else if (blockEditor.kind === "tools") {
         await saveToolsContent();
       } else if (blockEditor.kind === "trigger") {
         await saveTriggerJob();
@@ -5946,6 +6387,18 @@
     if (elTrgForm) {
       elTrgForm.addEventListener("input", () => markTriggerDirty());
       elTrgForm.addEventListener("change", () => markTriggerDirty());
+    }
+    if (elConnTest) {
+      elConnTest.addEventListener("click", () => void testSelectedConnector());
+    }
+    if (elConnFilterCfg) {
+      elConnFilterCfg.addEventListener("click", () => {
+        blockEditor.connConfiguredOnly = !blockEditor.connConfiguredOnly;
+        renderConnNav();
+      });
+    }
+    if (elConnEnabled) {
+      elConnEnabled.addEventListener("change", () => markConnectorDirty());
     }
   }
 

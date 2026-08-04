@@ -113,6 +113,13 @@ class CronJobCreateBody(BaseModel):
     no_agent: bool = False
 
 
+class MessagingPlatformUpdateBody(BaseModel):
+    enabled: Optional[bool] = None
+    env: dict[str, str] = Field(default_factory=dict)
+    clear_env: list[str] = Field(default_factory=list)
+    profile: Optional[str] = None
+
+
 class CronJobUpdateBody(BaseModel):
     updates: dict[str, Any] = Field(default_factory=dict)
 
@@ -919,6 +926,54 @@ def remote_cron_job_trigger(job_id: str, profile: Optional[str] = Query(default=
         method="POST",
         query={"profile": profile} if profile else None,
         timeout=60.0,
+    )
+
+
+@app.get("/api/remote/messaging/platforms")
+def remote_messaging_platforms(profile: Optional[str] = Query(default=None)):
+    """Proxy Hermes dashboard GET /api/messaging/platforms."""
+    return remote_api(
+        "/api/messaging/platforms",
+        method="GET",
+        query={"profile": profile} if profile else None,
+        timeout=45.0,
+    )
+
+
+@app.put("/api/remote/messaging/platforms/{platform_id}")
+def remote_messaging_platform_put(
+    platform_id: str,
+    body: MessagingPlatformUpdateBody,
+    profile: Optional[str] = Query(default=None),
+):
+    """Proxy Hermes dashboard PUT /api/messaging/platforms/{id}."""
+    prof = body.profile or profile
+    payload: dict[str, Any] = {
+        "enabled": body.enabled,
+        "env": body.env or {},
+        "clear_env": body.clear_env or [],
+    }
+    if prof:
+        payload["profile"] = prof
+    return remote_api(
+        f"/api/messaging/platforms/{quote(platform_id, safe='')}",
+        method="PUT",
+        query={"profile": prof} if prof else None,
+        body=payload,
+        timeout=60.0,
+    )
+
+
+@app.post("/api/remote/messaging/platforms/{platform_id}/test")
+def remote_messaging_platform_test(
+    platform_id: str, profile: Optional[str] = Query(default=None)
+):
+    """Proxy Hermes dashboard POST /api/messaging/platforms/{id}/test."""
+    return remote_api(
+        f"/api/messaging/platforms/{quote(platform_id, safe='')}/test",
+        method="POST",
+        query={"profile": profile} if profile else None,
+        timeout=45.0,
     )
 
 
