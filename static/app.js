@@ -2093,7 +2093,8 @@
   }
 
   function applyChatHeight(pct) {
-    const clamped = Math.max(18, Math.min(72, pct));
+    // Allow near full-height chat (canvas can shrink to a thin strip).
+    const clamped = Math.max(12, Math.min(96, pct));
     elChatPane.style.flexBasis = clamped + "%";
     elChatPane.style.height = clamped + "%";
     document.documentElement.style.setProperty("--chat-height", clamped + "%");
