@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/style.css?v=20260722o" />
+    <link rel="stylesheet" href="/static/style.css?v=20260804z" />
   </head>
   <body>
     <div class="app" id="app">
@@ -63,6 +63,21 @@
 
         <div class="main-split" id="main-split">
           <section class="canvas-pane" id="canvas-pane" aria-label="Agent canvas">
+            <button
+              type="button"
+              class="canvas-delete-agent"
+              id="canvas-delete-agent"
+              title="Delete this Hermes profile on the server"
+              aria-label="Delete agent profile"
+              hidden
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+                <path
+                  fill="currentColor"
+                  d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v9h-2V9zm4 0h2v9h-2V9zM7 9h2v9H7V9zm-1 12h12a1 1 0 0 0 1-1V8H5v12a1 1 0 0 0 1 1z"
+                />
+              </svg>
+            </button>
             <div class="canvas-viewport" id="canvas-viewport">
               <div class="canvas-world" id="canvas-world">
                 <div class="canvas-grid" id="canvas-grid" aria-hidden="true"></div>
@@ -186,6 +201,190 @@
                     <div class="sk-hub-results" id="sk-hub-results"></div>
                   </div>
                 </div>
+                <div class="tools-panel" id="tools-panel" hidden>
+                  <div class="cfg-content tools-content">
+                    <div class="tools-section">
+                      <h3 class="tools-heading">Auxiliary vision (Hermes standard)</h3>
+                      <p class="tools-hint">
+                        Non-vision main models (e.g. glm-5.2) use <code>vision_analyze</code> via
+                        <code>auxiliary.vision</code>. Set provider + model explicitly; <code>auto</code>
+                        fails when Hermes cannot resolve a vision backend.
+                      </p>
+                      <div class="tools-grid">
+                        <label class="tools-field">
+                          <span>Provider</span>
+                          <select id="tools-vision-provider">
+                            <option value="openrouter">openrouter</option>
+                            <option value="openai">openai</option>
+                            <option value="anthropic">anthropic</option>
+                            <option value="google">google</option>
+                            <option value="auto">auto</option>
+                          </select>
+                        </label>
+                        <label class="tools-field">
+                          <span>Vision model</span>
+                          <input
+                            type="text"
+                            id="tools-vision-model"
+                            list="tools-vision-models"
+                            placeholder="google/gemini-2.5-flash"
+                            autocomplete="off"
+                            spellcheck="false"
+                          />
+                          <datalist id="tools-vision-models">
+                            <option value="google/gemini-2.5-flash"></option>
+                            <option value="z-ai/glm-5v-turbo"></option>
+                            <option value="z-ai/glm-4.6v"></option>
+                            <option value="openai/gpt-4o-mini"></option>
+                          </datalist>
+                        </label>
+                        <label class="tools-field">
+                          <span>image_input_mode</span>
+                          <select id="tools-image-mode">
+                            <option value="auto">auto (native if main supports vision, else aux)</option>
+                            <option value="text">text (always pre-analyze via vision_analyze)</option>
+                            <option value="native">native (send image parts to main model)</option>
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+                    <div class="tools-section">
+                      <div class="cfg-toolbar sec-toolbar">
+                        <h3 class="tools-heading tools-heading-inline">Toolsets</h3>
+                        <button type="button" class="sk-bulk-btn" id="tools-common-on">Enable common</button>
+                        <button type="button" class="sk-bulk-btn" id="tools-all-off">Clear extras</button>
+                        <span class="cfg-section-label" id="tools-section-label"></span>
+                      </div>
+                      <p class="tools-hint">
+                        <code>hermes-cli</code> already includes core tools (files, terminal, web,
+                        browser, vision_analyze, …). Extra toolsets pin capabilities for the TOOLS
+                        card and platform CLI.
+                      </p>
+                      <div class="sk-fields" id="tools-fields"></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="trg-panel" id="trg-panel" hidden>
+                  <aside class="cfg-nav" id="trg-nav" aria-label="Cron jobs"></aside>
+                  <div class="cfg-content">
+                    <div class="cfg-toolbar trg-toolbar">
+                      <button type="button" class="sk-bulk-btn" id="trg-new">New job</button>
+                      <button type="button" class="sk-bulk-btn" id="trg-run">Run now</button>
+                      <button type="button" class="sk-bulk-btn" id="trg-pause">Pause</button>
+                      <button type="button" class="sk-bulk-btn" id="trg-delete">Delete</button>
+                      <span class="cfg-section-label" id="trg-section-label"></span>
+                    </div>
+                    <div class="trg-form" id="trg-form">
+                      <div class="trg-field">
+                        <label class="trg-label" for="trg-name">Name</label>
+                        <input type="text" id="trg-name" class="trg-input" autocomplete="off" placeholder="Job name" />
+                      </div>
+                      <div class="trg-field">
+                        <label class="trg-label" for="trg-prompt">Prompt</label>
+                        <textarea
+                          id="trg-prompt"
+                          class="trg-textarea"
+                          rows="4"
+                          spellcheck="true"
+                          placeholder="What should Hermes run on schedule?"
+                        ></textarea>
+                      </div>
+                      <label class="sec-check trg-include-tasks">
+                        <input type="checkbox" id="trg-include-tasks" />
+                        Include canvas tasks
+                      </label>
+                      <p class="trg-hint">
+                        When checked, canvas TASK cards are appended to the Hermes prompt automatically (any prompt text).
+                      </p>
+                      <label class="sec-check trg-enabled">
+                        <input type="checkbox" id="trg-enabled" checked />
+                        Enabled
+                      </label>
+                      <div class="trg-field">
+                        <label class="trg-label" for="chat-schedule-type">Schedule type</label>
+                        <select id="chat-schedule-type" class="trg-input">
+                          <option value="loop">Loop (repeat with delay)</option>
+                          <option value="interval">Interval (every X time)</option>
+                          <option value="daily">Daily (specific time)</option>
+                          <option value="weekly">Weekly (day and time)</option>
+                          <option value="once">Once (date and time)</option>
+                          <option value="cron">Custom cron</option>
+                        </select>
+                      </div>
+                      <div id="chat-ui-interval" class="chat-schedule-ui schedule-ui-grid">
+                        <div>
+                          <label class="trg-label" for="chat-interval-val">Every</label>
+                          <input type="number" id="chat-interval-val" class="trg-input" min="1" value="15" />
+                        </div>
+                        <div>
+                          <label class="trg-label" for="chat-interval-unit">Unit</label>
+                          <select id="chat-interval-unit" class="trg-input">
+                            <option value="s">Seconds</option>
+                            <option value="m" selected>Minutes</option>
+                            <option value="h">Hours</option>
+                            <option value="d">Days</option>
+                          </select>
+                        </div>
+                      </div>
+                      <p id="chat-loop-hint" class="trg-hint" style="display: none">
+                        Loop runs the prompt, waits the delay, then repeats until disabled.
+                      </p>
+                      <div id="chat-ui-daily" class="chat-schedule-ui" hidden>
+                        <label class="trg-label" for="chat-daily-time">Time</label>
+                        <input type="time" id="chat-daily-time" class="trg-input" value="08:30" />
+                      </div>
+                      <div id="chat-ui-weekly" class="chat-schedule-ui schedule-ui-grid" hidden>
+                        <div>
+                          <label class="trg-label" for="chat-weekly-day">Day of week</label>
+                          <select id="chat-weekly-day" class="trg-input">
+                            <option value="1">Monday</option>
+                            <option value="2">Tuesday</option>
+                            <option value="3">Wednesday</option>
+                            <option value="4">Thursday</option>
+                            <option value="5">Friday</option>
+                            <option value="6">Saturday</option>
+                            <option value="0">Sunday</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label class="trg-label" for="chat-weekly-time">Time</label>
+                          <input type="time" id="chat-weekly-time" class="trg-input" value="09:00" />
+                        </div>
+                      </div>
+                      <div id="chat-ui-once" class="chat-schedule-ui" hidden>
+                        <label class="trg-label" for="chat-once-datetime">Date and time</label>
+                        <input type="datetime-local" id="chat-once-datetime" class="trg-input" />
+                      </div>
+                      <div id="chat-ui-cron" class="chat-schedule-ui" hidden>
+                        <label class="trg-label" for="chat-cron-expr">Cron expression</label>
+                        <input
+                          type="text"
+                          id="chat-cron-expr"
+                          class="trg-input"
+                          placeholder="* * * * *"
+                          autocomplete="off"
+                        />
+                        <p class="trg-hint">Format: minute hour day month day-of-week</p>
+                      </div>
+                      <p class="trg-preview" id="trg-preview"></p>
+                      <div class="trg-runbox" id="trg-runbox" hidden>
+                        <div class="trg-run-line">
+                          <span class="trg-label">Last run</span>
+                          <span id="trg-last-run">—</span>
+                        </div>
+                        <div class="trg-run-line">
+                          <span class="trg-label">Status</span>
+                          <span id="trg-last-status">—</span>
+                        </div>
+                        <pre class="trg-last-error" id="trg-last-error" hidden></pre>
+                      </div>
+                      <p class="trg-hint">
+                        Cron completions are posted into the Messages pane below (polled from Hermes).
+                      </p>
+                      <p class="trg-hint">Saved as Hermes cron on the connected gateway (not Agent OS).</p>
+                    </div>
+                  </div>
+                </div>
                 <div class="mem-tabs" id="mem-tabs" hidden>
                   <button type="button" class="mem-tab" data-mem-file="MEMORY.md" aria-current="true">
                     MEMORY.md
@@ -217,14 +416,28 @@
 
           <section class="chat-pane" id="chat-pane" aria-label="Agent chat">
             <div class="messages" id="messages" role="log" aria-live="polite"></div>
-            <div class="composer">
+            <div class="composer" id="composer">
+              <div class="composer-attach" id="composer-attach" hidden></div>
+              <div class="composer-drop-hint" id="composer-drop-hint" hidden>Drop files to attach</div>
               <div class="composer-row">
                 <textarea
                   id="composer-input"
                   rows="2"
-                  placeholder="Message… (Enter to send, Shift+Enter for newline)"
+                  placeholder="Message… (paste image / drop files · Enter to send)"
                 ></textarea>
-                <button type="button" id="send-btn">Send</button>
+                <div class="composer-actions">
+                  <label class="composer-attach-btn" title="Attach files" aria-label="Attach files">
+                    Attach
+                    <input
+                      type="file"
+                      id="composer-file"
+                      multiple
+                      accept="image/*,.pdf,.txt,.md,.csv,.json,.log,.py,.js,.ts,.html,.css,.xml,.yaml,.yml,.toml"
+                      hidden
+                    />
+                  </label>
+                  <button type="button" id="send-btn">Send</button>
+                </div>
               </div>
             </div>
           </section>
@@ -342,6 +555,41 @@
       </div>
     </div>
 
-    <script src="/static/app.js?v=20260722o"></script>
+    <div class="modal-backdrop" id="gw-required-modal" hidden>
+      <div
+        class="modal gw-required-modal"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="gw-required-title"
+        aria-describedby="gw-required-msg"
+      >
+        <header class="modal-header">
+          <div>
+            <h2 id="gw-required-title">Gateway required</h2>
+          </div>
+          <button type="button" class="modal-close" id="gw-required-close" aria-label="Close">
+            x
+          </button>
+        </header>
+        <div class="modal-body">
+          <p class="gw-required-warn" id="gw-required-msg">
+            Hermes Canvas needs a live gateway before profiles, blocks, and editors work.
+          </p>
+          <p class="gw-hint" id="gw-required-detail"></p>
+        </div>
+        <footer class="modal-footer">
+          <button type="button" class="btn btn-ghost" id="gw-required-dismiss">Dismiss</button>
+          <div class="modal-footer-right">
+            <button type="button" class="btn btn-primary" id="gw-required-open">
+              Open Gateway settings
+            </button>
+          </div>
+        </footer>
+      </div>
+    </div>
+
+    <script src="/static/vendor/marked.min.js"></script>
+    <script src="/static/vendor/purify.min.js"></script>
+    <script src="/static/app.js?v=20260804z"></script>
   </body>
 </html>

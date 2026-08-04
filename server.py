@@ -97,6 +97,26 @@ class SkillHubInstallBody(BaseModel):
     profile: Optional[str] = None
 
 
+class CronJobCreateBody(BaseModel):
+    prompt: str = ""
+    schedule: str
+    name: str = ""
+    deliver: str = "local"
+    skills: Optional[list[str]] = None
+    model: Optional[str] = None
+    provider: Optional[str] = None
+    base_url: Optional[str] = None
+    script: Optional[str] = None
+    context_from: Optional[Any] = None
+    enabled_toolsets: Optional[list[str]] = None
+    workdir: Optional[str] = None
+    no_agent: bool = False
+
+
+class CronJobUpdateBody(BaseModel):
+    updates: dict[str, Any] = Field(default_factory=dict)
+
+
 MEMORY_FILE_ALIASES = {
     "memory": "MEMORY.md",
     "memory.md": "MEMORY.md",
@@ -166,6 +186,8 @@ def default_config() -> dict[str, Any]:
         "gatewayStatus": "idle",
         "cameras": {},
         "layouts": {},
+        "cronPrefs": {},
+        "chatByProfile": {},
     }
 
 
@@ -185,6 +207,10 @@ def read_config() -> dict[str, Any]:
             out["cameras"] = {}
         if not isinstance(out.get("layouts"), dict):
             out["layouts"] = {}
+        if not isinstance(out.get("cronPrefs"), dict):
+            out["cronPrefs"] = {}
+        if not isinstance(out.get("chatByProfile"), dict):
+            out["chatByProfile"] = {}
         if not isinstance(out.get("gateway"), dict):
             out["gateway"] = {"global": {}, "profiles": {}}
         return out
@@ -590,6 +616,16 @@ def remote_profiles_create(body: ProfileCreateBody):
     return remote_api("/api/profiles", method="POST", body=payload, timeout=60.0)
 
 
+@app.delete("/api/remote/profiles/{name}")
+def remote_profiles_delete(name: str):
+    """Proxy Hermes dashboard DELETE /api/profiles/{name} (remove profile on host)."""
+    return remote_api(
+        f"/api/profiles/{quote(name, safe='')}",
+        method="DELETE",
+        timeout=90.0,
+    )
+
+
 @app.get("/api/remote/profiles/{name}/soul")
 def remote_soul_get(name: str):
     """Proxy Hermes dashboard GET /api/profiles/{name}/soul (Desktop SOUL.md)."""
@@ -787,6 +823,235 @@ def remote_action_status(name: str, lines: int = Query(default=80)):
         query={"lines": lines},
         timeout=30.0,
     )
+
+
+@app.get("/api/remote/cron/jobs")
+def remote_cron_jobs_list(profile: Optional[str] = Query(default=None)):
+    """Proxy Hermes dashboard GET /api/cron/jobs."""
+    return remote_api(
+        "/api/cron/jobs",
+        method="GET",
+        query={"profile": profile or "all"},
+        timeout=30.0,
+    )
+
+
+@app.get("/api/remote/cron/jobs/{job_id}")
+def remote_cron_job_get(job_id: str, profile: Optional[str] = Query(default=None)):
+    """Proxy Hermes dashboard GET /api/cron/jobs/{id}."""
+    return remote_api(
+        f"/api/cron/jobs/{quote(job_id, safe='')}",
+        method="GET",
+        query={"profile": profile} if profile else None,
+        timeout=30.0,
+    )
+
+
+@app.post("/api/remote/cron/jobs")
+def remote_cron_job_create(
+    body: CronJobCreateBody, profile: Optional[str] = Query(default=None)
+):
+    """Proxy Hermes dashboard POST /api/cron/jobs."""
+    payload = body.model_dump(exclude_none=True)
+    return remote_api(
+        "/api/cron/jobs",
+        method="POST",
+        query={"profile": profile} if profile else None,
+        body=payload,
+        timeout=30.0,
+    )
+
+
+@app.put("/api/remote/cron/jobs/{job_id}")
+def remote_cron_job_update(
+    job_id: str,
+    body: CronJobUpdateBody,
+    profile: Optional[str] = Query(default=None),
+):
+    """Proxy Hermes dashboard PUT /api/cron/jobs/{id}."""
+    return remote_api(
+        f"/api/cron/jobs/{quote(job_id, safe='')}",
+        method="PUT",
+        query={"profile": profile} if profile else None,
+        body={"updates": body.updates or {}},
+        timeout=30.0,
+    )
+
+
+@app.delete("/api/remote/cron/jobs/{job_id}")
+def remote_cron_job_delete(job_id: str, profile: Optional[str] = Query(default=None)):
+    """Proxy Hermes dashboard DELETE /api/cron/jobs/{id}."""
+    return remote_api(
+        f"/api/cron/jobs/{quote(job_id, safe='')}",
+        method="DELETE",
+        query={"profile": profile} if profile else None,
+        timeout=30.0,
+    )
+
+
+@app.post("/api/remote/cron/jobs/{job_id}/pause")
+def remote_cron_job_pause(job_id: str, profile: Optional[str] = Query(default=None)):
+    """Proxy Hermes dashboard POST /api/cron/jobs/{id}/pause."""
+    return remote_api(
+        f"/api/cron/jobs/{quote(job_id, safe='')}/pause",
+        method="POST",
+        query={"profile": profile} if profile else None,
+        timeout=30.0,
+    )
+
+
+@app.post("/api/remote/cron/jobs/{job_id}/resume")
+def remote_cron_job_resume(job_id: str, profile: Optional[str] = Query(default=None)):
+    """Proxy Hermes dashboard POST /api/cron/jobs/{id}/resume."""
+    return remote_api(
+        f"/api/cron/jobs/{quote(job_id, safe='')}/resume",
+        method="POST",
+        query={"profile": profile} if profile else None,
+        timeout=30.0,
+    )
+
+
+@app.post("/api/remote/cron/jobs/{job_id}/trigger")
+def remote_cron_job_trigger(job_id: str, profile: Optional[str] = Query(default=None)):
+    """Proxy Hermes dashboard POST /api/cron/jobs/{id}/trigger (run now)."""
+    return remote_api(
+        f"/api/cron/jobs/{quote(job_id, safe='')}/trigger",
+        method="POST",
+        query={"profile": profile} if profile else None,
+        timeout=60.0,
+    )
+
+
+@app.get("/api/remote/sessions")
+def remote_sessions_list(
+    profile: Optional[str] = Query(default=None),
+    limit: int = Query(default=20),
+    min_messages: int = Query(default=1),
+    order: str = Query(default="recent"),
+):
+    """Proxy Hermes dashboard GET /api/sessions."""
+    return remote_api(
+        "/api/sessions",
+        method="GET",
+        query={
+            "profile": profile,
+            "limit": limit,
+            "min_messages": min_messages,
+            "order": order,
+            "archived": "exclude",
+        },
+        timeout=30.0,
+    )
+
+
+@app.get("/api/remote/sessions/{session_id}")
+def remote_session_get(session_id: str, profile: Optional[str] = Query(default=None)):
+    """Proxy Hermes dashboard GET /api/sessions/{id}."""
+    return remote_api(
+        f"/api/sessions/{quote(session_id, safe='')}",
+        method="GET",
+        query={"profile": profile} if profile else None,
+        timeout=30.0,
+    )
+
+
+@app.get("/api/remote/sessions/{session_id}/messages")
+def remote_session_messages(
+    session_id: str, profile: Optional[str] = Query(default=None)
+):
+    """Proxy Hermes dashboard GET /api/sessions/{id}/messages."""
+    return remote_api(
+        f"/api/sessions/{quote(session_id, safe='')}/messages",
+        method="GET",
+        query={"profile": profile} if profile else None,
+        timeout=60.0,
+    )
+
+
+@app.get("/api/remote/cron/jobs/{job_id}/runs")
+def remote_cron_job_runs(
+    job_id: str,
+    profile: Optional[str] = Query(default=None),
+    limit: int = Query(default=10),
+):
+    """Proxy Hermes dashboard GET /api/cron/jobs/{id}/runs."""
+    return remote_api(
+        f"/api/cron/jobs/{quote(job_id, safe='')}/runs",
+        method="GET",
+        query={"profile": profile, "limit": limit},
+        timeout=30.0,
+    )
+
+
+@app.get("/api/remote/cron/jobs/{job_id}/latest-output")
+def remote_cron_job_latest_output(
+    job_id: str, profile: Optional[str] = Query(default=None)
+):
+    """Read newest cron output markdown for a job (Hermes deliver=local files)."""
+    if not profile:
+        raise HTTPException(status_code=400, detail="profile is required")
+    job = remote_api(
+        f"/api/cron/jobs/{quote(job_id, safe='')}",
+        method="GET",
+        query={"profile": profile},
+        timeout=30.0,
+    )
+    if not isinstance(job, dict) or not job.get("id"):
+        raise HTTPException(status_code=404, detail="Job not found")
+    canonical = str(job["id"])
+    home = resolve_remote_profile_home(profile)
+    out_dir = f"{home}/cron/output/{canonical}"
+    try:
+        listing = remote_api("/api/files", method="GET", query={"path": out_dir})
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return {
+                "content": "",
+                "exists": False,
+                "path": None,
+                "job_id": canonical,
+                "response": "",
+                "silent": False,
+            }
+        raise
+    entries = listing.get("entries") if isinstance(listing, dict) else None
+    files = [
+        e
+        for e in (entries or [])
+        if isinstance(e, dict)
+        and not e.get("is_directory")
+        and str(e.get("name") or "").endswith(".md")
+    ]
+    if not files:
+        return {
+            "content": "",
+            "exists": False,
+            "path": None,
+            "job_id": canonical,
+            "response": "",
+            "silent": False,
+        }
+    files.sort(key=lambda e: float(e.get("mtime") or 0), reverse=True)
+    latest = files[0]
+    path = str(latest.get("path") or f"{out_dir}/{latest.get('name')}")
+    raw = remote_api("/api/files/read", method="GET", query={"path": path})
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=502, detail="Unexpected files/read response")
+    content = decode_remote_data_url(str(raw.get("data_url") or ""))
+    response = ""
+    if "## Response" in content:
+        response = content.split("## Response", 1)[1].strip()
+    silent = response.strip().upper() == "[SILENT]"
+    return {
+        "content": content,
+        "exists": True,
+        "path": path,
+        "name": latest.get("name"),
+        "job_id": canonical,
+        "response": response,
+        "silent": silent,
+        "mtime": latest.get("mtime"),
+    }
 
 
 @app.get("/api/remote/profiles/{name}/memory/{which}")
