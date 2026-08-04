@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/style.css?v=20260804z" />
+    <link rel="stylesheet" href="/static/style.css?v=20260804aa" />
   </head>
   <body>
     <div class="app" id="app">
@@ -226,17 +226,10 @@
                           <input
                             type="text"
                             id="tools-vision-model"
-                            list="tools-vision-models"
-                            placeholder="google/gemini-2.5-flash"
+                            placeholder="from config.yaml auxiliary.vision.model"
                             autocomplete="off"
                             spellcheck="false"
                           />
-                          <datalist id="tools-vision-models">
-                            <option value="google/gemini-2.5-flash"></option>
-                            <option value="z-ai/glm-5v-turbo"></option>
-                            <option value="z-ai/glm-4.6v"></option>
-                            <option value="openai/gpt-4o-mini"></option>
-                          </datalist>
                         </label>
                         <label class="tools-field">
                           <span>image_input_mode</span>
@@ -590,6 +583,6 @@
 
     <script src="/static/vendor/marked.min.js"></script>
     <script src="/static/vendor/purify.min.js"></script>
-    <script src="/static/app.js?v=20260804z"></script>
+    <script src="/static/app.js?v=20260804aa"></script>
   </body>
 </html>

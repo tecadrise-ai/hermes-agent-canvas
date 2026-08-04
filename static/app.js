@@ -4425,13 +4425,6 @@
       set.add(row.id);
     }
     blockEditor.toolsEnabled = set;
-    if (elToolsVisionProvider && (!elToolsVisionProvider.value || elToolsVisionProvider.value === "auto")) {
-      elToolsVisionProvider.value = "openrouter";
-    }
-    if (elToolsVisionModel && !String(elToolsVisionModel.value || "").trim()) {
-      elToolsVisionModel.value = "google/gemini-2.5-flash";
-    }
-    if (elToolsImageMode) elToolsImageMode.value = "auto";
     renderToolsFields();
     const prev = currentToolsPreviewArgs();
     applyToolsPreview(blockEditor.profile || activeId, prev.toolsets, prev.vision);
