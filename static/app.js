@@ -4682,6 +4682,10 @@
         elChatIntervalVal && elChatIntervalVal.value,
         elChatIntervalUnit && elChatIntervalUnit.value
       );
+      // Hermes builtin ticker polls every 60s. Interval jobs set
+      // next_run = last + N minutes; if the tick lands a few seconds early,
+      // a 1-minute job often slips to ~2 minutes. Wall-clock cron is reliable.
+      if (mins <= 1) return "* * * * *";
       return "every " + mins + "m";
     }
     if (type === "daily") {
@@ -4719,7 +4723,11 @@
       const num = (elChatIntervalVal && elChatIntervalVal.value) || "15";
       const unit = (elChatIntervalUnit && elChatIntervalUnit.value) || "m";
       const map = { s: "seconds", m: "minutes", h: "hours", d: "days" };
-      return "Every " + num + " " + (map[unit] || unit) + " → Hermes " + hermes;
+      const hermesNote =
+        hermes === "* * * * *"
+          ? " (wall-clock every minute; Hermes 1m interval ticks are unreliable)"
+          : "";
+      return "Every " + num + " " + (map[unit] || unit) + " → Hermes " + hermes + hermesNote;
     }
     if (type === "daily") {
       const t = (elChatDailyTime && elChatDailyTime.value) || "08:30";
