@@ -2412,6 +2412,7 @@
     const profile = chatProfileForAgent(agent);
     const savedId =
       st.historySessionId || st.sessionId || getSavedChatSessionId(agent.id);
+    const expectedModel = await fetchProfileConfigModel(profile || agent.id);
 
     // HTTP /api/sessions/{id} can return history for a dead WS session.
     // Live chat requires session.resume (or session.create) on this socket.
@@ -2430,6 +2431,7 @@
         st.historySessionId = String(durable);
         st.sessionId = String(liveId);
         st.live = true;
+        warnIfSessionModelMismatch(agent, resumed, expectedModel);
         persistChatState(agent.id);
         return st.sessionId;
       } catch (_) {
@@ -2447,8 +2449,52 @@
     st.historySessionId = st.sessionId;
     st.live = !!st.sessionId;
     if (!st.sessionId) throw new Error("session.create returned no session_id");
+    warnIfSessionModelMismatch(agent, created, expectedModel);
     persistChatState(agent.id);
     return st.sessionId;
+  }
+
+  async function fetchProfileConfigModel(profile) {
+    if (!profile || profile === "_offline") return "";
+    try {
+      const res = await fetch("/api/remote/config/tree?profile=" + encodeURIComponent(profile));
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return "";
+      const cfg = data.config || {};
+      if (typeof cfg.model === "string") return String(cfg.model).trim();
+      if (cfg.model && typeof cfg.model === "object") {
+        return String(cfg.model.default || cfg.model.name || "").trim();
+      }
+    } catch (_) {}
+    return "";
+  }
+
+  function sessionPayloadModel(payload) {
+    if (!payload || typeof payload !== "object") return "";
+    if (payload.model) return String(payload.model).trim();
+    if (payload.info && payload.info.model) return String(payload.info.model).trim();
+    if (payload.session && payload.session.model) return String(payload.session.model).trim();
+    return "";
+  }
+
+  function warnIfSessionModelMismatch(agent, payload, expectedModel) {
+    const got = sessionPayloadModel(payload);
+    if (!agent || !got) return;
+    const st = chatGw.sessions[agent.id];
+    if (st) st.sessionModel = got;
+    if (!expectedModel) return;
+    const norm = (s) => String(s || "").trim().toLowerCase();
+    if (norm(got) === norm(expectedModel)) return;
+    const msg =
+      "MODEL MISMATCH: session is using " +
+      got +
+      " but config.yaml says " +
+      expectedModel +
+      ". Check HERMES_MODEL env override / Desktop model switch.";
+    if (!agent.chat.some((m) => m && m.role === "meta" && m.text === msg)) {
+      agent.chat.push({ role: "meta", text: msg });
+      if (agent.id === activeId) renderChat();
+    }
   }
 
   function isSessionNotFoundError(err) {
