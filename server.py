@@ -983,6 +983,9 @@ def remote_sessions_list(
     limit: int = Query(default=20),
     min_messages: int = Query(default=1),
     order: str = Query(default="recent"),
+    source: Optional[str] = Query(default=None),
+    exclude_sources: Optional[str] = Query(default=None),
+    offset: int = Query(default=0),
 ):
     """Proxy Hermes dashboard GET /api/sessions."""
     return remote_api(
@@ -994,6 +997,9 @@ def remote_sessions_list(
             "min_messages": min_messages,
             "order": order,
             "archived": "exclude",
+            "source": source,
+            "exclude_sources": exclude_sources,
+            "offset": offset,
         },
         timeout=30.0,
     )

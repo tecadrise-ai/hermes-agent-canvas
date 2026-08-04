@@ -14,6 +14,17 @@
   const elCanvasEdges = document.getElementById("canvas-edges");
   const elCanvasEdgesTask = document.getElementById("canvas-edges-task");
   const elBlockEditor = document.getElementById("block-editor");
+  const elSessionsPanel = document.getElementById("sessions-panel");
+  const elSessBack = document.getElementById("sess-back");
+  const elSessPath = document.getElementById("sess-path");
+  const elSessList = document.getElementById("sess-list");
+  const elSessStatus = document.getElementById("sess-status");
+  const elSessSectionLabel = document.getElementById("sess-section-label");
+  const elSessNew = document.getElementById("sess-new");
+  const elSessReload = document.getElementById("sess-reload");
+  const elSessFilterChats = document.getElementById("sess-filter-chats");
+  const elSessFilterCron = document.getElementById("sess-filter-cron");
+  const elSessFilterAll = document.getElementById("sess-filter-all");
   const elBlockEditorBack = document.getElementById("block-editor-back");
   const elBlockEditorTitle = document.getElementById("block-editor-title");
   const elBlockEditorPath = document.getElementById("block-editor-path");
@@ -394,7 +405,6 @@
     { id: "trigger", label: "TRIGGER", body: "cron/", color: "#eab308", x: 72, y: 264 },
     { id: "hooks", label: "HOOKS", body: "hooks/", color: "#a855f7", x: 1104, y: 456 },
     { id: "plugins", label: "PLUGINS", body: "plugins/", color: "#06b6d4", x: 1104, y: 264 },
-    { id: "sessions", label: "SESSIONS", body: "sessions/ (runtime)", color: "#94a3b8", x: 816, y: 600 },
   ];
 
   const BLOCK_BY_ID = Object.fromEntries(BLOCK_CATALOG.map((b) => [b.id, b]));
@@ -448,6 +458,10 @@
 
   function ensureAgentExtras(agent) {
     if (!Array.isArray(agent.taskEdges)) agent.taskEdges = [];
+    // SESSIONS is a side-menu section, not a canvas block (strip legacy layouts).
+    if (Array.isArray(agent.nodes)) {
+      agent.nodes = agent.nodes.filter((n) => n && (n.task || (n.id !== "sessions" && BLOCK_BY_ID[n.id])));
+    }
   }
 
   function defaultAgentNodes(profileName) {
@@ -633,7 +647,7 @@
         const listRes = await fetch(
           "/api/remote/sessions?profile=" +
             encodeURIComponent(profile) +
-            "&limit=5&min_messages=1&order=recent"
+            "&limit=5&min_messages=1&order=recent&exclude_sources=cron"
         );
         const listData = await listRes.json().catch(() => ({}));
         if (listRes.ok) {
@@ -663,12 +677,14 @@
         if (!chatGw.sessions[profile]) {
           chatGw.sessions[profile] = {
             sessionId: sessionId,
+            historySessionId: sessionId,
             streamingIdx: null,
             thinkingMsg: null,
             live: false,
           };
         } else {
           chatGw.sessions[profile].sessionId = sessionId;
+          chatGw.sessions[profile].historySessionId = sessionId;
           chatGw.sessions[profile].live = false;
         }
         persistChatState(profile);
@@ -685,12 +701,14 @@
       if (!chatGw.sessions[profile]) {
         chatGw.sessions[profile] = {
           sessionId: sessionId,
+          historySessionId: sessionId,
           streamingIdx: null,
           thinkingMsg: null,
           live: false,
         };
       } else {
         chatGw.sessions[profile].sessionId = sessionId;
+        chatGw.sessions[profile].historySessionId = sessionId;
         chatGw.sessions[profile].live = false;
       }
       persistChatState(profile);
@@ -698,6 +716,298 @@
       return true;
     } catch (_) {
       return false;
+    }
+  }
+
+  function currentChatSessionId(profile) {
+    const id = profile || activeId;
+    const st = chatGw.sessions[id];
+    return (
+      (st && (st.historySessionId || st.sessionId)) ||
+      getSavedChatSessionId(id) ||
+      null
+    );
+  }
+
+  function setSessStatus(text, kind) {
+    if (!elSessStatus) return;
+    elSessStatus.textContent = text || "";
+    elSessStatus.dataset.kind = kind || "";
+  }
+
+  function isSessionsPanelOpen() {
+    return !!(elSessionsPanel && !elSessionsPanel.hidden);
+  }
+
+  function closeSessionsPanel() {
+    if (!elSessionsPanel) return;
+    elSessionsPanel.hidden = true;
+    sessionsUi.open = false;
+    if (elCanvasPane) elCanvasPane.classList.remove("is-sessions");
+    const agent = activeAgent();
+    if (agent && menuSelectionByAgent[agent.id] === "sessions") {
+      menuSelectionByAgent[agent.id] = "engine";
+      renderSideMenu();
+    }
+  }
+
+  function sessionTitle(row) {
+    if (!row) return "Session";
+    const title = String(row.title || row.display_name || "").trim();
+    if (title) return title;
+    const preview = String(row.preview || "").replace(/\s+/g, " ").trim();
+    if (preview) return preview.length > 64 ? preview.slice(0, 61) + "…" : preview;
+    const id = String(row.id || row.session_id || "");
+    return id ? id.slice(0, 28) + (id.length > 28 ? "…" : "") : "Session";
+  }
+
+  function sessionWhen(row) {
+    const raw = row && (row.last_active != null ? row.last_active : row.started_at);
+    if (raw == null) return "";
+    const ms = typeof raw === "number" && raw < 1e12 ? raw * 1000 : Number(raw);
+    if (!Number.isFinite(ms)) return "";
+    return fmtChatTs(ms);
+  }
+
+  function syncSessFilterButtons() {
+    const map = [
+      [elSessFilterChats, "chats"],
+      [elSessFilterCron, "cron"],
+      [elSessFilterAll, "all"],
+    ];
+    for (const [el, id] of map) {
+      if (!el) continue;
+      el.setAttribute("aria-current", sessionsUi.filter === id ? "true" : "false");
+    }
+  }
+
+  function renderSessionsList() {
+    if (!elSessList) return;
+    elSessList.innerHTML = "";
+    const current = currentChatSessionId(activeId);
+    const rows = sessionsUi.rows || [];
+    if (!rows.length) {
+      const empty = document.createElement("p");
+      empty.className = "sess-empty";
+      empty.textContent =
+        sessionsUi.filter === "cron"
+          ? "No cron sessions for this profile."
+          : "No chat sessions yet. Send a message or click New chat.";
+      elSessList.appendChild(empty);
+      return;
+    }
+    for (const row of rows) {
+      if (!row) continue;
+      const sid = String(row.id || row.session_id || "");
+      if (!sid) continue;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "sess-item";
+      btn.setAttribute("role", "option");
+      btn.setAttribute("aria-current", sid === current ? "true" : "false");
+      const title = document.createElement("div");
+      title.className = "sess-item-title";
+      title.textContent = sessionTitle(row);
+      btn.appendChild(title);
+      const preview = String(row.preview || "").replace(/\s+/g, " ").trim();
+      if (preview && preview !== title.textContent) {
+        const p = document.createElement("div");
+        p.className = "sess-item-preview";
+        p.textContent = preview;
+        btn.appendChild(p);
+      }
+      const meta = document.createElement("div");
+      meta.className = "sess-item-meta";
+      const bits = [];
+      if (row.source) bits.push(String(row.source));
+      if (row.model) bits.push(String(row.model).split("/").pop());
+      if (row.message_count != null) bits.push(row.message_count + " msgs");
+      const when = sessionWhen(row);
+      if (when) bits.push(when);
+      meta.textContent = bits.join(" · ");
+      if (row.is_active) {
+        const live = document.createElement("span");
+        live.className = "is-active";
+        live.textContent = " active";
+        meta.appendChild(live);
+      }
+      btn.appendChild(meta);
+      btn.addEventListener("click", () => void switchToChatSession(sid, row));
+      elSessList.appendChild(btn);
+    }
+  }
+
+  async function loadSessionsList() {
+    const profile = activeId;
+    if (!profile || profile === "_offline") {
+      setSessStatus("Connect gateway and select a profile.", "bad");
+      return;
+    }
+    sessionsUi.busy = true;
+    setSessStatus("Loading sessions…", "");
+    syncSessFilterButtons();
+    try {
+      const q = new URLSearchParams({
+        profile: profile,
+        limit: "50",
+        min_messages: "1",
+        order: "recent",
+      });
+      if (sessionsUi.filter === "chats") q.set("exclude_sources", "cron");
+      else if (sessionsUi.filter === "cron") q.set("source", "cron");
+      const res = await fetch("/api/remote/sessions?" + q.toString());
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || data.error || "Load failed");
+      sessionsUi.rows = Array.isArray(data.sessions) ? data.sessions : [];
+      sessionsUi.total = Number(data.total != null ? data.total : sessionsUi.rows.length) || 0;
+      if (elSessPath) {
+        elSessPath.textContent =
+          "profile " + profile + " · " + sessionsUi.total + " total · filter " + sessionsUi.filter;
+      }
+      if (elSessSectionLabel) {
+        elSessSectionLabel.textContent = sessionsUi.rows.length + " shown";
+      }
+      renderSessionsList();
+      setSessStatus("Loaded " + sessionsUi.rows.length + " sessions.", "ok");
+    } catch (err) {
+      setSessStatus(String(err && err.message ? err.message : err), "bad");
+    } finally {
+      sessionsUi.busy = false;
+    }
+  }
+
+  async function openSessionsPanel() {
+    if (isBlockEditorOpen() && !closeBlockEditor(false)) return;
+    const agent = activeAgent();
+    if (!agent || agent.offline) {
+      setSessStatus("Connect gateway first.", "bad");
+      return;
+    }
+    menuSelectionByAgent[agent.id] = "sessions";
+    sessionsUi.open = true;
+    if (elSessionsPanel) elSessionsPanel.hidden = false;
+    if (elCanvasPane) elCanvasPane.classList.add("is-sessions");
+    renderSideMenu();
+    await loadSessionsList();
+  }
+
+  async function applyChatSessionMessages(profile, sessionId) {
+    const agent = agents.find((a) => a.id === profile);
+    if (!agent) return false;
+    const res = await fetch(
+      "/api/remote/sessions/" +
+        encodeURIComponent(sessionId) +
+        "/messages?profile=" +
+        encodeURIComponent(profile)
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || data.error || "Failed to load messages");
+    const msgs = hermesMessagesToChat(data.messages || data || []);
+    const banner = {
+      role: "meta",
+      text: "Session " + sessionId + " · profile " + profile,
+    };
+    const localCron = (agent.chat || []).filter((m) => m && m.role === "cron");
+    agent.chat = [banner].concat(msgs).concat(localCron);
+    const st = chatGw.sessions[profile] || {
+      sessionId: null,
+      historySessionId: null,
+      streamingIdx: null,
+      thinkingMsg: null,
+      live: false,
+    };
+    chatGw.sessions[profile] = st;
+    st.historySessionId = String(sessionId);
+    st.sessionId = String(sessionId);
+    st.live = false;
+    st.streamingIdx = null;
+    st.thinkingMsg = null;
+    persistChatState(profile);
+    if (profile === activeId) renderChat();
+    return true;
+  }
+
+  async function switchToChatSession(sessionId, row) {
+    const agent = activeAgent();
+    if (!agent || agent.offline) return;
+    const profile = agent.id;
+    if (!sessionId) return;
+    if (isChatBusy(profile)) {
+      setSessStatus("Stop the current reply before switching sessions.", "bad");
+      return;
+    }
+    const current = currentChatSessionId(profile);
+    if (
+      current &&
+      String(current) === String(sessionId) &&
+      chatGw.sessions[profile] &&
+      chatGw.sessions[profile].live
+    ) {
+      setSessStatus("Already on this session.", "ok");
+      renderSessionsList();
+      return;
+    }
+    sessionsUi.busy = true;
+    setSessStatus("Switching to " + sessionTitle(row || { id: sessionId }) + "…", "");
+    try {
+      await applyChatSessionMessages(profile, sessionId);
+      try {
+        await ensureChatSession(agent, false);
+        setSessStatus("Resumed session " + sessionId + ".", "ok");
+      } catch (err) {
+        setSessStatus(
+          "History loaded. Live resume pending: " +
+            String(err && err.message ? err.message : err),
+          "bad"
+        );
+      }
+      renderSessionsList();
+    } catch (err) {
+      setSessStatus(String(err && err.message ? err.message : err), "bad");
+    } finally {
+      sessionsUi.busy = false;
+    }
+  }
+
+  async function startNewChatSession() {
+    const agent = activeAgent();
+    if (!agent || agent.offline) return;
+    const profile = agent.id;
+    if (isChatBusy(profile)) {
+      setSessStatus("Stop the current reply before starting a new chat.", "bad");
+      return;
+    }
+    sessionsUi.busy = true;
+    setSessStatus("Creating new chat session…", "");
+    try {
+      const st = chatGw.sessions[profile] || {
+        sessionId: null,
+        historySessionId: null,
+        streamingIdx: null,
+        thinkingMsg: null,
+        live: false,
+      };
+      chatGw.sessions[profile] = st;
+      st.sessionId = null;
+      st.historySessionId = null;
+      st.live = false;
+      st.streamingIdx = null;
+      st.thinkingMsg = null;
+      agent.chat = [
+        {
+          role: "meta",
+          text: "New chat session · profile " + profile,
+        },
+      ];
+      renderChat();
+      const sid = await ensureChatSession(agent, true);
+      persistChatState(profile);
+      setSessStatus("Started new session " + sid + ".", "ok");
+      await loadSessionsList();
+    } catch (err) {
+      setSessStatus(String(err && err.message ? err.message : err), "bad");
+    } finally {
+      sessionsUi.busy = false;
     }
   }
 
@@ -725,6 +1035,13 @@
   let activeId = agents[0].id;
   let menuSelectionByAgent = Object.fromEntries(agents.map((a) => [a.id, "engine"]));
   let profilesSyncBusy = false;
+  let sessionsUi = {
+    open: false,
+    filter: "chats", // chats | cron | all
+    rows: [],
+    total: 0,
+    busy: false,
+  };
   let drag = null;
   let pan = null;
   let zoom = 1;
@@ -1580,6 +1897,7 @@
     }
     taskBtn.addEventListener("click", () => {
       menuSelectionByAgent[agent.id] = "+task";
+      if (isSessionsPanelOpen()) closeSessionsPanel();
       renderSideMenu();
     });
     taskBtn.addEventListener("dblclick", (e) => {
@@ -1623,6 +1941,7 @@
 
       btn.addEventListener("click", () => {
         menuSelectionByAgent[agent.id] = block.id;
+        if (isSessionsPanelOpen()) closeSessionsPanel();
         renderSideMenu();
       });
       btn.addEventListener("dblclick", (e) => {
@@ -1636,6 +1955,24 @@
       });
       elSideBody.appendChild(btn);
     }
+
+    const sessBtn = document.createElement("button");
+    sessBtn.type = "button";
+    sessBtn.className = "side-item side-item-sessions";
+    sessBtn.setAttribute("aria-current", current === "sessions" ? "true" : "false");
+    sessBtn.title = "Browse and switch chat sessions for this profile";
+    const sessDot = document.createElement("span");
+    sessDot.className = "side-item-dot";
+    const sessLabel = document.createElement("span");
+    sessLabel.textContent = "SESSIONS";
+    sessBtn.appendChild(sessDot);
+    sessBtn.appendChild(sessLabel);
+    sessBtn.addEventListener("click", () => {
+      menuSelectionByAgent[agent.id] = "sessions";
+      renderSideMenu();
+      void openSessionsPanel();
+    });
+    elSideBody.appendChild(sessBtn);
   }
 
   function renderCanvas() {
@@ -1988,6 +2325,7 @@
     if (id === activeId && !force) return;
 
     if (isBlockEditorOpen() && !closeBlockEditor(false)) return;
+    const keepSessions = isSessionsPanelOpen();
 
     if (pan) endPan();
     if (activeId && activeId !== id) {
@@ -2007,11 +2345,15 @@
     if (hasSavedView(id)) loadView(id);
     else needCenter = true;
 
+    if (keepSessions) menuSelectionByAgent[id] = "sessions";
+
     renderTabs();
     renderSideMenu();
     renderCanvas();
     renderChat();
     void refreshBlockCardLabels(id);
+    if (keepSessions) void loadSessionsList();
+    else if (isSessionsPanelOpen()) closeSessionsPanel();
 
     if (needCenter) {
       requestAnimationFrame(() => {
@@ -6074,6 +6416,7 @@
     ) {
       return;
     }
+    if (isSessionsPanelOpen()) closeSessionsPanel();
     hideCtxMenu();
     endPan();
     if (drag) return;
@@ -6254,6 +6597,28 @@
     if (!elBlockEditor) return;
     if (elBlockEditorBack) {
       elBlockEditorBack.addEventListener("click", () => closeBlockEditor(false));
+    }
+    if (elSessBack) {
+      elSessBack.addEventListener("click", () => closeSessionsPanel());
+    }
+    if (elSessReload) {
+      elSessReload.addEventListener("click", () => void loadSessionsList());
+    }
+    if (elSessNew) {
+      elSessNew.addEventListener("click", () => void startNewChatSession());
+    }
+    const filterBtns = [
+      [elSessFilterChats, "chats"],
+      [elSessFilterCron, "cron"],
+      [elSessFilterAll, "all"],
+    ];
+    for (const [el, id] of filterBtns) {
+      if (!el) continue;
+      el.addEventListener("click", () => {
+        if (sessionsUi.filter === id) return;
+        sessionsUi.filter = id;
+        void loadSessionsList();
+      });
     }
     if (elBlockEditorSave) {
       elBlockEditorSave.addEventListener("click", () => void saveBlockEditor());

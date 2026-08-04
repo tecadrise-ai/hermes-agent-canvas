@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/style.css?v=20260804ae" />
+    <link rel="stylesheet" href="/static/style.css?v=20260804af" />
   </head>
   <body>
     <div class="app" id="app">
@@ -85,6 +85,31 @@
                 <div class="canvas-nodes" id="canvas-nodes"></div>
                 <svg class="canvas-edges canvas-edges-task" id="canvas-edges-task" aria-hidden="true"></svg>
               </div>
+            </div>
+            <div class="sessions-panel" id="sessions-panel" hidden>
+              <header class="block-editor-header">
+                <button type="button" class="block-editor-back" id="sess-back" title="Back to canvas">
+                  ← Canvas
+                </button>
+                <div class="block-editor-title-wrap">
+                  <h2 class="block-editor-title" id="sess-title">SESSIONS</h2>
+                  <p class="block-editor-path" id="sess-path"></p>
+                </div>
+                <div class="block-editor-actions">
+                  <button type="button" class="block-editor-reload" id="sess-new">New chat</button>
+                  <button type="button" class="block-editor-reload" id="sess-reload">Reload</button>
+                </div>
+              </header>
+              <div class="sess-toolbar">
+                <button type="button" class="sk-bulk-btn" id="sess-filter-chats" data-filter="chats" aria-current="true">
+                  Chats
+                </button>
+                <button type="button" class="sk-bulk-btn" id="sess-filter-cron" data-filter="cron">Cron</button>
+                <button type="button" class="sk-bulk-btn" id="sess-filter-all" data-filter="all">All</button>
+                <span class="cfg-section-label" id="sess-section-label"></span>
+              </div>
+              <div class="sess-list" id="sess-list" role="listbox" aria-label="Profile sessions"></div>
+              <div class="block-editor-status" id="sess-status" aria-live="polite"></div>
             </div>
             <div class="block-editor" id="block-editor" hidden>
               <header class="block-editor-header">
@@ -612,6 +637,6 @@
 
     <script src="/static/vendor/marked.min.js"></script>
     <script src="/static/vendor/purify.min.js"></script>
-    <script src="/static/app.js?v=20260804ae"></script>
+    <script src="/static/app.js?v=20260804af"></script>
   </body>
 </html>
