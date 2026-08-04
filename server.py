@@ -124,6 +124,11 @@ class CronJobUpdateBody(BaseModel):
     updates: dict[str, Any] = Field(default_factory=dict)
 
 
+class ToolsetToggleBody(BaseModel):
+    enabled: bool
+    profile: Optional[str] = None
+
+
 MEMORY_FILE_ALIASES = {
     "memory": "MEMORY.md",
     "memory.md": "MEMORY.md",
@@ -760,6 +765,37 @@ def remote_env_reveal(body: EnvKeyBody, profile: Optional[str] = Query(default=N
         "/api/env/reveal",
         method="POST",
         query={"profile": prof},
+        body=payload,
+        timeout=30.0,
+    )
+
+
+@app.get("/api/remote/tools/toolsets")
+def remote_tools_toolsets(profile: Optional[str] = Query(default=None)):
+    """Proxy Hermes dashboard GET /api/tools/toolsets (live catalog)."""
+    return remote_api(
+        "/api/tools/toolsets",
+        method="GET",
+        query={"profile": profile} if profile else None,
+        timeout=45.0,
+    )
+
+
+@app.put("/api/remote/tools/toolsets/{name}")
+def remote_tools_toolset_toggle(
+    name: str,
+    body: ToolsetToggleBody,
+    profile: Optional[str] = Query(default=None),
+):
+    """Proxy Hermes dashboard PUT /api/tools/toolsets/{name}."""
+    prof = body.profile or profile
+    payload: dict[str, Any] = {"enabled": body.enabled}
+    if prof:
+        payload["profile"] = prof
+    return remote_api(
+        f"/api/tools/toolsets/{quote(name, safe='')}",
+        method="PUT",
+        query={"profile": prof} if prof else None,
         body=payload,
         timeout=30.0,
     )

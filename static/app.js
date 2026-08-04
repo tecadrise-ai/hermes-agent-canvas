@@ -3501,6 +3501,7 @@
     cronDirty: false,
     includeCanvasTasks: false,
     toolsEnabled: null, // Set of enabled toolset ids
+    toolsCatalog: null, // live rows from /api/tools/toolsets
     connPlatforms: [],
     connSelectedId: null,
     connBaseline: "",
@@ -3510,25 +3511,24 @@
     connGatewayCmd: "",
   };
 
-  // Hermes toolsets commonly needed for Canvas chat / vision / research.
-  // hermes-cli already bundles vision_analyze; extra sets pin them in config.
-  const HERMES_COMMON_TOOLSETS = [
-    { id: "hermes-cli", label: "hermes-cli", desc: "Full CLI core (files, terminal, web, browser, vision_analyze, …)", required: true },
-    { id: "vision", label: "vision", desc: "vision_analyze — image understanding via auxiliary.vision" },
-    { id: "web", label: "web", desc: "web_search + web_extract" },
-    { id: "browser", label: "browser", desc: "Browser automation (navigate, snapshot, click, …)" },
-    { id: "terminal", label: "terminal", desc: "Shell / process tools" },
-    { id: "file", label: "file", desc: "read_file / write_file / patch / search_files" },
-    { id: "image_gen", label: "image_gen", desc: "image_generate" },
-    { id: "memory", label: "memory", desc: "Persistent memory tools" },
-    { id: "todo", label: "todo", desc: "Task planning tool" },
-    { id: "clarify", label: "clarify", desc: "Ask clarifying questions" },
-    { id: "code_execution", label: "code_execution", desc: "Run Python that calls tools" },
-    { id: "search", label: "search", desc: "Web search only" },
-    { id: "delegation", label: "delegation", desc: "Spawn subagents" },
-    { id: "session_search", label: "session_search", desc: "Search past conversations" },
-    { id: "skills", label: "skills", desc: "Skill list / view / manage" },
-    { id: "cronjob", label: "cronjob", desc: "Manage cron jobs from chat" },
+  // Canvas "Enable common" preset only. Catalog itself always comes from Hermes.
+  const HERMES_COMMON_TOOLSET_IDS = [
+    "hermes-cli",
+    "vision",
+    "web",
+    "browser",
+    "terminal",
+    "file",
+    "image_gen",
+    "memory",
+    "todo",
+    "clarify",
+    "code_execution",
+    "search",
+    "delegation",
+    "session_search",
+    "skills",
+    "cronjob",
   ];
 
   let schemaCache = null;
@@ -4678,14 +4678,27 @@
     }
   }
 
-  function toolsPreviewText(toolsets, vision) {
-    const list = Array.isArray(toolsets) ? toolsets.filter(Boolean) : [];
-    const catalogIds = HERMES_COMMON_TOOLSETS.map((r) => r.id);
-    const total = catalogIds.length || 1;
-    const enabled = catalogIds.filter((id) => list.includes(id)).length;
-    const extras = list.filter((id) => !catalogIds.includes(id)).length;
+  function toolsPreviewText(toolsetsOrCatalog, vision) {
+    let enabled = 0;
+    let total = 0;
+    if (
+      Array.isArray(toolsetsOrCatalog) &&
+      toolsetsOrCatalog.length &&
+      typeof toolsetsOrCatalog[0] === "object"
+    ) {
+      total = toolsetsOrCatalog.length;
+      enabled = toolsetsOrCatalog.filter((t) => t && t.enabled).length;
+    } else {
+      const list = Array.isArray(toolsetsOrCatalog) ? toolsetsOrCatalog.filter(Boolean) : [];
+      const catalog = Array.isArray(blockEditor.toolsCatalog) ? blockEditor.toolsCatalog : [];
+      total = catalog.length || list.length || 1;
+      if (catalog.length) {
+        enabled = catalog.filter((t) => t && list.includes(t.name)).length;
+      } else {
+        enabled = list.length;
+      }
+    }
     let next = enabled + " / " + total + " enabled";
-    if (extras) next += " +" + extras;
     const vModel = vision && vision.model ? String(vision.model) : "";
     const vProv = vision && vision.provider ? String(vision.provider) : "";
     if (vProv || vModel) {
@@ -4694,12 +4707,12 @@
     return next;
   }
 
-  function applyToolsPreview(agentId, toolsets, vision) {
+  function applyToolsPreview(agentId, toolsetsOrCatalog, vision) {
     const agent = agents.find((a) => a.id === agentId);
     if (!agent) return;
     const node = agent.nodes.find((n) => n.id === "tools");
     if (!node) return;
-    const next = toolsPreviewText(toolsets, vision);
+    const next = toolsPreviewText(toolsetsOrCatalog, vision);
     if (node.body === next) return;
     node.body = next;
     if (agentId === activeId) renderCanvas();
@@ -4707,14 +4720,9 @@
   }
 
   function currentToolsPreviewArgs() {
-    const enabled =
-      blockEditor.toolsEnabled instanceof Set
-        ? Array.from(blockEditor.toolsEnabled)
-        : Array.isArray(blockEditor.configDraft && blockEditor.configDraft.toolsets)
-          ? blockEditor.configDraft.toolsets
-          : [];
+    const catalog = Array.isArray(blockEditor.toolsCatalog) ? blockEditor.toolsCatalog : [];
     const vision =
-      (elToolsVisionProvider || elToolsVisionModel)
+      elToolsVisionProvider || elToolsVisionModel
         ? {
             provider: elToolsVisionProvider ? elToolsVisionProvider.value : "",
             model: elToolsVisionModel ? elToolsVisionModel.value : "",
@@ -4723,7 +4731,7 @@
             blockEditor.configDraft.auxiliary &&
             blockEditor.configDraft.auxiliary.vision) ||
           {});
-    return { toolsets: enabled, vision: vision };
+    return { toolsets: catalog, vision: vision };
   }
 
   async function refreshToolsLabel(agentId) {
@@ -4733,30 +4741,23 @@
     if (!agent || !agent.nodes.some((n) => n.id === "tools")) return;
     try {
       const q = "?profile=" + encodeURIComponent(id);
-      const res = await fetch("/api/remote/config/tree" + q);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) return;
-      const cfg = data.config && typeof data.config === "object" ? data.config : {};
-      const toolsets = Array.isArray(cfg.toolsets) ? cfg.toolsets : [];
+      const [tsRes, cfgRes] = await Promise.all([
+        fetch("/api/remote/tools/toolsets" + q),
+        fetch("/api/remote/config/tree" + q),
+      ]);
+      const tsData = await tsRes.json().catch(() => ([]));
+      const cfgData = await cfgRes.json().catch(() => ({}));
+      if (!tsRes.ok) return;
+      const catalog = Array.isArray(tsData) ? tsData : [];
+      const cfg = cfgData.config && typeof cfgData.config === "object" ? cfgData.config : {};
       const vision = (cfg.auxiliary && cfg.auxiliary.vision) || {};
-      applyToolsPreview(id, toolsets, vision);
+      applyToolsPreview(id, catalog, vision);
     } catch (_) {}
   }
 
   function stashToolsDraft() {
     if (blockEditor.kind !== "tools" || !blockEditor.configDraft) return;
-    const enabled = blockEditor.toolsEnabled instanceof Set ? Array.from(blockEditor.toolsEnabled) : [];
-    // Keep hermes-cli first, then remaining in catalog order, then any extras already present.
-    const ordered = [];
-    for (const row of HERMES_COMMON_TOOLSETS) {
-      if (enabled.includes(row.id) && !ordered.includes(row.id)) ordered.push(row.id);
-    }
-    for (const id of enabled) {
-      if (!ordered.includes(id)) ordered.push(id);
-    }
-    if (!ordered.includes("hermes-cli")) ordered.unshift("hermes-cli");
-    blockEditor.configDraft.toolsets = ordered;
-
+    // Toolset enablement is persisted live via /api/tools/toolsets/{name}.
     const aux = blockEditor.configDraft.auxiliary || {};
     const vision = Object.assign({}, aux.vision || {});
     if (elToolsVisionProvider) vision.provider = elToolsVisionProvider.value || "openrouter";
@@ -4772,12 +4773,6 @@
     if (elToolsImageMode) agent.image_input_mode = elToolsImageMode.value || "auto";
     blockEditor.configDraft.agent = agent;
 
-    const pt = blockEditor.configDraft.platform_toolsets || {};
-    const cliWanted = ["hermes-cli", "vision", "web", "browser"].filter((id) => ordered.includes(id));
-    if (!cliWanted.includes("hermes-cli")) cliWanted.unshift("hermes-cli");
-    pt.cli = cliWanted;
-    blockEditor.configDraft.platform_toolsets = pt;
-
     const gw = blockEditor.configDraft.gateway || {};
     gw.trust_recent_files = true;
     if (!gw.trust_recent_files_seconds) gw.trust_recent_files_seconds = 600;
@@ -4786,67 +4781,152 @@
 
   function renderToolsFields() {
     if (!elToolsFields) return;
+    const catalog = Array.isArray(blockEditor.toolsCatalog) ? blockEditor.toolsCatalog : [];
     const enabled = blockEditor.toolsEnabled instanceof Set ? blockEditor.toolsEnabled : new Set();
     elToolsFields.innerHTML = "";
-    for (const row of HERMES_COMMON_TOOLSETS) {
-      const on = enabled.has(row.id);
+    if (!catalog.length) {
+      const empty = document.createElement("p");
+      empty.className = "tools-hint";
+      empty.textContent = "No toolsets returned by Hermes yet.";
+      elToolsFields.appendChild(empty);
+      if (elToolsSectionLabel) elToolsSectionLabel.textContent = "0 enabled";
+      return;
+    }
+    for (const row of catalog) {
+      if (!row || !row.name) continue;
+      const id = String(row.name);
+      const on = enabled.has(id);
       const wrap = document.createElement("div");
       wrap.className = "sk-row";
       const meta = document.createElement("div");
       meta.className = "sk-row-meta";
       const name = document.createElement("div");
       name.className = "sk-row-name";
-      name.textContent = row.label;
+      name.textContent = row.label || id;
       const desc = document.createElement("div");
       desc.className = "sk-row-desc";
-      desc.textContent = row.desc || "";
+      const tools = Array.isArray(row.tools) ? row.tools : [];
+      const toolBit = tools.length + " tools";
+      const availBit = row.available === false ? " · unavailable" : "";
+      const cfgBit = row.configured === false ? " · needs config" : "";
+      desc.textContent =
+        (row.description || "") +
+        (row.description ? " · " : "") +
+        toolBit +
+        availBit +
+        cfgBit;
       meta.appendChild(name);
       meta.appendChild(desc);
+      if (tools.length) {
+        const detail = document.createElement("div");
+        detail.className = "sk-row-desc";
+        detail.style.opacity = "0.85";
+        detail.textContent = tools.slice(0, 12).join(", ") + (tools.length > 12 ? "…" : "");
+        meta.appendChild(detail);
+      }
       const lab = document.createElement("label");
       lab.className = "sec-check";
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.checked = on;
-      cb.disabled = !!row.required;
       cb.addEventListener("change", () => {
-        if (row.required) {
-          cb.checked = true;
-          return;
-        }
-        if (cb.checked) enabled.add(row.id);
-        else enabled.delete(row.id);
-        blockEditor.toolsEnabled = enabled;
-        if (elToolsSectionLabel) {
-          elToolsSectionLabel.textContent = enabled.size + " enabled";
-        }
-        const prev = currentToolsPreviewArgs();
-        applyToolsPreview(blockEditor.profile || activeId, prev.toolsets, prev.vision);
+        void toggleLiveToolset(id, cb.checked, cb);
       });
       lab.appendChild(cb);
-      lab.appendChild(document.createTextNode(row.required ? " required" : " on"));
+      lab.appendChild(document.createTextNode(on ? " on" : " off"));
       wrap.appendChild(meta);
       wrap.appendChild(lab);
       elToolsFields.appendChild(wrap);
     }
-    if (elToolsSectionLabel) elToolsSectionLabel.textContent = enabled.size + " enabled";
-  }
-
-  function enableCommonToolsets() {
-    const set = new Set((blockEditor.toolsEnabled && Array.from(blockEditor.toolsEnabled)) || []);
-    for (const row of HERMES_COMMON_TOOLSETS) {
-      set.add(row.id);
+    if (elToolsSectionLabel) {
+      elToolsSectionLabel.textContent = enabled.size + " / " + catalog.length + " enabled";
     }
-    blockEditor.toolsEnabled = set;
-    renderToolsFields();
-    const prev = currentToolsPreviewArgs();
-    applyToolsPreview(blockEditor.profile || activeId, prev.toolsets, prev.vision);
   }
 
-  function clearExtraToolsets() {
-    blockEditor.toolsEnabled = new Set(["hermes-cli"]);
+  async function toggleLiveToolset(name, wantEnabled, checkboxEl) {
+    const profile = blockEditor.profile || activeId || null;
+    if (!profile) return;
+    const prev = blockEditor.toolsEnabled instanceof Set ? new Set(blockEditor.toolsEnabled) : new Set();
+    const next = new Set(prev);
+    if (wantEnabled) next.add(name);
+    else next.delete(name);
+    blockEditor.toolsEnabled = next;
+    if (Array.isArray(blockEditor.toolsCatalog)) {
+      for (const row of blockEditor.toolsCatalog) {
+        if (row && row.name === name) row.enabled = !!wantEnabled;
+      }
+    }
     renderToolsFields();
-    const prev = currentToolsPreviewArgs();
-    applyToolsPreview(blockEditor.profile || activeId, prev.toolsets, prev.vision);
+    const prevArgs = currentToolsPreviewArgs();
+    applyToolsPreview(profile, prevArgs.toolsets, prevArgs.vision);
+    try {
+      const q = "?profile=" + encodeURIComponent(profile);
+      const res = await fetch("/api/remote/tools/toolsets/" + encodeURIComponent(name) + q, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !!wantEnabled, profile: profile }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || data.error || "Toggle failed");
+      setBlockEditorStatus((wantEnabled ? "Enabled " : "Disabled ") + name + ".", "ok");
+    } catch (err) {
+      blockEditor.toolsEnabled = prev;
+      if (Array.isArray(blockEditor.toolsCatalog)) {
+        for (const row of blockEditor.toolsCatalog) {
+          if (row && row.name === name) row.enabled = prev.has(name);
+        }
+      }
+      if (checkboxEl) checkboxEl.checked = prev.has(name);
+      renderToolsFields();
+      const rollback = currentToolsPreviewArgs();
+      applyToolsPreview(profile, rollback.toolsets, rollback.vision);
+      setBlockEditorStatus(String(err && err.message ? err.message : err), "bad");
+    }
+  }
+
+  async function enableCommonToolsets() {
+    const catalog = Array.isArray(blockEditor.toolsCatalog) ? blockEditor.toolsCatalog : [];
+    const liveNames = new Set(catalog.map((r) => r && r.name).filter(Boolean));
+    const targets = HERMES_COMMON_TOOLSET_IDS.filter((id) => liveNames.has(id));
+    if (!targets.length) {
+      setBlockEditorStatus("None of the common preset toolsets exist in this Hermes build.", "bad");
+      return;
+    }
+    setBlockEditorStatus("Enabling common toolsets (" + targets.length + ")…", "");
+    let ok = 0;
+    let fail = 0;
+    for (const id of targets) {
+      const row = catalog.find((r) => r && r.name === id);
+      if (row && row.enabled) {
+        ok += 1;
+        continue;
+      }
+      try {
+        await toggleLiveToolset(id, true, null);
+        ok += 1;
+      } catch (_) {
+        fail += 1;
+      }
+    }
+    setBlockEditorStatus(
+      "Common preset: " + ok + " enabled" + (fail ? ", " + fail + " failed" : "") + ".",
+      fail ? "bad" : "ok"
+    );
+  }
+
+  async function clearExtraToolsets() {
+    const catalog = Array.isArray(blockEditor.toolsCatalog) ? blockEditor.toolsCatalog : [];
+    const common = new Set(HERMES_COMMON_TOOLSET_IDS);
+    const extras = catalog.filter((r) => r && r.name && r.enabled && !common.has(r.name));
+    if (!extras.length) {
+      setBlockEditorStatus("No non-common toolsets enabled.", "ok");
+      return;
+    }
+    setBlockEditorStatus("Clearing " + extras.length + " non-common toolset(s)…", "");
+    for (const row of extras) {
+      await toggleLiveToolset(row.name, false, null);
+    }
+    setBlockEditorStatus("Cleared non-common toolsets.", "ok");
   }
 
   async function loadToolsContent() {
@@ -4858,21 +4938,31 @@
     blockEditor.busy = true;
     if (elBlockEditorSave) elBlockEditorSave.disabled = true;
     if (elBlockEditorReload) elBlockEditorReload.disabled = true;
-    setBlockEditorStatus("Loading toolsets via gateway…", "");
+    setBlockEditorStatus("Loading live Hermes toolsets…", "");
     try {
       const q = "?profile=" + encodeURIComponent(profile);
-      const res = await fetch("/api/remote/config/tree" + q);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.detail || data.error || "Failed to load config");
-      const cfg = data.config && typeof data.config === "object" ? data.config : {};
+      const [tsRes, cfgRes] = await Promise.all([
+        fetch("/api/remote/tools/toolsets" + q),
+        fetch("/api/remote/config/tree" + q),
+      ]);
+      const tsData = await tsRes.json().catch(() => ([]));
+      const cfgData = await cfgRes.json().catch(() => ({}));
+      if (!tsRes.ok) {
+        throw new Error((tsData && (tsData.detail || tsData.error)) || "Failed to load toolsets");
+      }
+      if (!cfgRes.ok) {
+        throw new Error((cfgData && (cfgData.detail || cfgData.error)) || "Failed to load config");
+      }
+      const catalog = Array.isArray(tsData) ? tsData : [];
+      const cfg = cfgData.config && typeof cfgData.config === "object" ? cfgData.config : {};
+      blockEditor.toolsCatalog = catalog;
+      blockEditor.toolsEnabled = new Set(
+        catalog.filter((r) => r && r.enabled && r.name).map((r) => String(r.name))
+      );
       blockEditor.configDraft = deepClone(cfg);
       blockEditor.configBaseline = deepClone(cfg);
       blockEditor.profile = profile;
       blockEditor.mode = "tools";
-
-      const toolsets = Array.isArray(cfg.toolsets) ? cfg.toolsets.slice() : ["hermes-cli"];
-      if (!toolsets.includes("hermes-cli")) toolsets.unshift("hermes-cli");
-      blockEditor.toolsEnabled = new Set(toolsets.filter(Boolean));
 
       const vision = (cfg.auxiliary && cfg.auxiliary.vision) || {};
       if (elToolsVisionProvider) {
@@ -4888,17 +4978,22 @@
       }
 
       renderToolsFields();
-      applyToolsPreview(profile, toolsets, vision);
+      applyToolsPreview(profile, catalog, vision);
       if (elBlockEditorPath) {
         elBlockEditorPath.textContent =
-          "profile " + profile + " · toolsets + auxiliary.vision";
+          "profile " + profile + " · " + catalog.length + " Hermes toolsets";
         elBlockEditorPath.title = elBlockEditorPath.textContent;
       }
+      const missingCommon = HERMES_COMMON_TOOLSET_IDS.filter(
+        (id) => !catalog.some((r) => r && r.name === id)
+      );
       setBlockEditorStatus(
-        "Loaded Hermes tooling. Vision provider=" +
-          String(vision.provider || "?") +
-          " model=" +
-          String(vision.model || "(empty)"),
+        "Loaded " +
+          catalog.length +
+          " toolsets from Hermes." +
+          (missingCommon.length
+            ? " Common preset skips missing: " + missingCommon.join(", ") + "."
+            : ""),
         "ok"
       );
     } catch (err) {
@@ -4915,23 +5010,28 @@
     if (!profile) throw new Error("No profile/tab selected.");
     stashToolsDraft();
     const q = "?profile=" + encodeURIComponent(profile);
+    const patch = {
+      auxiliary: (blockEditor.configDraft && blockEditor.configDraft.auxiliary) || {},
+      agent: {
+        image_input_mode:
+          (blockEditor.configDraft &&
+            blockEditor.configDraft.agent &&
+            blockEditor.configDraft.agent.image_input_mode) ||
+          "auto",
+      },
+      gateway: (blockEditor.configDraft && blockEditor.configDraft.gateway) || {},
+    };
     const res = await fetch("/api/remote/config" + q, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ config: blockEditor.configDraft || {}, profile: profile }),
+      body: JSON.stringify({ config: patch, profile: profile }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || data.error || "Save failed");
     blockEditor.configBaseline = deepClone(blockEditor.configDraft);
-    const toolsets = (blockEditor.configDraft && blockEditor.configDraft.toolsets) || [];
-    const vision =
-      (blockEditor.configDraft && blockEditor.configDraft.auxiliary && blockEditor.configDraft.auxiliary.vision) ||
-      {};
-    applyToolsPreview(profile, toolsets, vision);
-    setBlockEditorStatus(
-      "Saved tooling. Restart trading gateway if an open session still lacks vision.",
-      "ok"
-    );
+    const prev = currentToolsPreviewArgs();
+    applyToolsPreview(profile, prev.toolsets, prev.vision);
+    setBlockEditorStatus("Saved auxiliary vision settings to remote Hermes.", "ok");
   }
 
   function connectorsPreviewText(platforms) {
@@ -5442,13 +5542,15 @@
       return "every " + mins + "m";
     }
     if (type === "daily") {
-      const t = (elChatDailyTime && elChatDailyTime.value) || "08:30";
+      const t = String((elChatDailyTime && elChatDailyTime.value) || "").trim();
+      if (!/^\d{2}:\d{2}$/.test(t)) return "";
       const hm = t.split(":");
       return parseInt(hm[1], 10) + " " + parseInt(hm[0], 10) + " * * *";
     }
     if (type === "weekly") {
       const d = (elChatWeeklyDay && elChatWeeklyDay.value) || "1";
-      const t = (elChatWeeklyTime && elChatWeeklyTime.value) || "09:00";
+      const t = String((elChatWeeklyTime && elChatWeeklyTime.value) || "").trim();
+      if (!/^\d{2}:\d{2}$/.test(t)) return "";
       const hm = t.split(":");
       return parseInt(hm[1], 10) + " " + parseInt(hm[0], 10) + " * * " + d;
     }
@@ -5470,7 +5572,7 @@
       const num = (elChatIntervalVal && elChatIntervalVal.value) || "15";
       const unit = (elChatIntervalUnit && elChatIntervalUnit.value) || "m";
       const map = { s: "seconds", m: "minutes", h: "hours", d: "days" };
-      return "Loop/delay: " + num + " " + (map[unit] || unit) + " → Hermes " + hermes;
+      return "Loop/delay: " + num + " " + (map[unit] || unit) + " → Hermes " + (hermes || "?");
     }
     if (type === "interval") {
       const num = (elChatIntervalVal && elChatIntervalVal.value) || "15";
@@ -5480,17 +5582,19 @@
         hermes === "* * * * *"
           ? " (wall-clock every minute; Hermes 1m interval ticks are unreliable)"
           : "";
-      return "Every " + num + " " + (map[unit] || unit) + " → Hermes " + hermes + hermesNote;
+      return "Every " + num + " " + (map[unit] || unit) + " → Hermes " + (hermes || "?") + hermesNote;
     }
     if (type === "daily") {
-      const t = (elChatDailyTime && elChatDailyTime.value) || "08:30";
-      return "Daily at " + t + " → Hermes " + hermes;
+      const t = String((elChatDailyTime && elChatDailyTime.value) || "").trim();
+      if (!t) return "Pick a daily time";
+      return "Daily at " + t + " → Hermes " + (hermes || "?");
     }
     if (type === "weekly") {
       const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
       const d = parseInt((elChatWeeklyDay && elChatWeeklyDay.value) || "1", 10);
-      const t = (elChatWeeklyTime && elChatWeeklyTime.value) || "09:00";
-      return "Weekly (" + (days[d] || d) + ") at " + t + " → Hermes " + hermes;
+      const t = String((elChatWeeklyTime && elChatWeeklyTime.value) || "").trim();
+      if (!t) return "Pick a weekly time";
+      return "Weekly (" + (days[d] || d) + ") at " + t + " → Hermes " + (hermes || "?");
     }
     if (type === "once") {
       const dt = (elChatOnceDatetime && elChatOnceDatetime.value) || "";
@@ -5584,6 +5688,66 @@
     renderTriggerRunStatus(null);
   }
 
+  function isCronNumericField(value) {
+    return /^\d+$/.test(String(value == null ? "" : value).trim());
+  }
+
+  function applyHermesCronExprToTriggerUi(cronExpr) {
+    const cron = String(cronExpr || "").trim();
+    if (!cron) return false;
+    // Canvas maps interval 1m → wall-clock "* * * * *" (Hermes interval ticks slip).
+    if (cron === "* * * * *" || cron === "*/1 * * * *") {
+      if (elChatScheduleType) elChatScheduleType.value = "interval";
+      if (elChatIntervalVal) elChatIntervalVal.value = "1";
+      if (elChatIntervalUnit) elChatIntervalUnit.value = "m";
+      return true;
+    }
+    const p = cron.split(/\s+/);
+    if (p.length < 5) {
+      if (elChatScheduleType) elChatScheduleType.value = "cron";
+      if (elChatCronExpr) elChatCronExpr.value = cron;
+      return true;
+    }
+    // Daily: "M H * * *" with numeric minute/hour only (never "* * * * *").
+    if (
+      p[2] === "*" &&
+      p[3] === "*" &&
+      p[4] === "*" &&
+      isCronNumericField(p[0]) &&
+      isCronNumericField(p[1])
+    ) {
+      if (elChatScheduleType) elChatScheduleType.value = "daily";
+      if (elChatDailyTime) {
+        elChatDailyTime.value =
+          String(parseInt(p[1], 10)).padStart(2, "0") +
+          ":" +
+          String(parseInt(p[0], 10)).padStart(2, "0");
+      }
+      return true;
+    }
+    // Weekly: "M H * * D" with numeric minute/hour/dow.
+    if (
+      p[2] === "*" &&
+      p[3] === "*" &&
+      isCronNumericField(p[0]) &&
+      isCronNumericField(p[1]) &&
+      isCronNumericField(p[4])
+    ) {
+      if (elChatScheduleType) elChatScheduleType.value = "weekly";
+      if (elChatWeeklyDay) elChatWeeklyDay.value = String(parseInt(p[4], 10));
+      if (elChatWeeklyTime) {
+        elChatWeeklyTime.value =
+          String(parseInt(p[1], 10)).padStart(2, "0") +
+          ":" +
+          String(parseInt(p[0], 10)).padStart(2, "0");
+      }
+      return true;
+    }
+    if (elChatScheduleType) elChatScheduleType.value = "cron";
+    if (elChatCronExpr) elChatCronExpr.value = cron;
+    return true;
+  }
+
   function populateTriggerFromJob(job) {
     resetTriggerFormDefaults();
     if (!job) {
@@ -5615,7 +5779,10 @@
     if (sch.kind === "interval") {
       if (elChatScheduleType) elChatScheduleType.value = "interval";
       let mins = parseInt(sch.minutes, 10) || 15;
-      if (mins % 1440 === 0) {
+      if (mins <= 1) {
+        if (elChatIntervalVal) elChatIntervalVal.value = "1";
+        if (elChatIntervalUnit) elChatIntervalUnit.value = "m";
+      } else if (mins % 1440 === 0) {
         if (elChatIntervalVal) elChatIntervalVal.value = String(mins / 1440);
         if (elChatIntervalUnit) elChatIntervalUnit.value = "d";
       } else if (mins % 60 === 0) {
@@ -5630,26 +5797,10 @@
       const raw = String(sch.run_at || "").replace("Z", "").replace(/\.\d+/, "");
       const local = raw.includes("T") ? raw.slice(0, 16) : raw;
       if (elChatOnceDatetime) elChatOnceDatetime.value = local;
-    } else if (sch.kind === "cron" || sch.expr) {
-      const cron = String(sch.expr || sch.display || "").trim();
-      const p = cron.split(/\s+/);
-      if (p.length >= 5 && p[2] === "*" && p[3] === "*" && p[4] === "*") {
-        if (elChatScheduleType) elChatScheduleType.value = "daily";
-        if (elChatDailyTime) {
-          elChatDailyTime.value =
-            String(p[1]).padStart(2, "0") + ":" + String(p[0]).padStart(2, "0");
-        }
-      } else if (p.length >= 5 && p[2] === "*" && p[3] === "*" && p[4] !== "*") {
-        if (elChatScheduleType) elChatScheduleType.value = "weekly";
-        if (elChatWeeklyDay) elChatWeeklyDay.value = p[4];
-        if (elChatWeeklyTime) {
-          elChatWeeklyTime.value =
-            String(p[1]).padStart(2, "0") + ":" + String(p[0]).padStart(2, "0");
-        }
-      } else {
-        if (elChatScheduleType) elChatScheduleType.value = "cron";
-        if (elChatCronExpr) elChatCronExpr.value = cron;
-      }
+    } else if (sch.kind === "cron" || sch.expr || sch.display || job.schedule_display) {
+      applyHermesCronExprToTriggerUi(
+        sch.expr || sch.display || job.schedule_display || ""
+      );
     }
     updateChatScheduleUI();
     refreshTriggerPreview();
@@ -5757,7 +5908,14 @@
     blockEditor.includeCanvasTasks = includeTasks;
     const prompt = hermesPromptFromUi(promptUi, profile, includeTasks);
     const schedule = buildHermesScheduleString();
-    if (!schedule) throw new Error("Schedule is incomplete.");
+    if (!schedule) {
+      const type = elChatScheduleType ? elChatScheduleType.value : "interval";
+      if (type === "daily") throw new Error("Pick a daily time before saving.");
+      if (type === "weekly") throw new Error("Pick a weekly time before saving.");
+      if (type === "once") throw new Error("Pick a date/time before saving.");
+      if (type === "cron") throw new Error("Enter a cron expression before saving.");
+      throw new Error("Schedule is incomplete.");
+    }
     if (!promptUi && !includeTasks) throw new Error("Prompt is required (or enable Include canvas tasks).");
     if (includeTasks && !canvasTaskBodies(profile).length) {
       throw new Error("Add canvas TASK cards first, or uncheck Include canvas tasks.");
@@ -6378,6 +6536,8 @@
     blockEditor.cronBaseline = "";
     blockEditor.cronDirty = false;
     blockEditor.includeCanvasTasks = false;
+    blockEditor.toolsEnabled = null;
+    blockEditor.toolsCatalog = null;
     blockEditor.connPlatforms = [];
     blockEditor.connSelectedId = null;
     blockEditor.connBaseline = "";
@@ -6713,13 +6873,13 @@
     if (elToolsCommonOn) {
       elToolsCommonOn.addEventListener("click", () => {
         if (blockEditor.kind !== "tools") return;
-        enableCommonToolsets();
+        void enableCommonToolsets();
       });
     }
     if (elToolsAllOff) {
       elToolsAllOff.addEventListener("click", () => {
         if (blockEditor.kind !== "tools") return;
-        clearExtraToolsets();
+        void clearExtraToolsets();
       });
     }
     if (elTrgNew) {
