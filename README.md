@@ -1,4 +1,4 @@
-# Hermes Agent Canvas
+# Hermes Agent Canvas -Beta
 
 A clean graphical dashboard for configuring and chatting with [Hermes](https://github.com/NousResearch/hermes-agent) agents.
 
