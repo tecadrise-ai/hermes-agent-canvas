@@ -121,6 +121,10 @@ hermes-agent-canvas/
 - Docs: [Hermes Agent documentation](https://hermes-agent.nousresearch.com/docs/getting-started/quickstart)
 - This repo is a **UI gateway** for configuration and chat, not a replacement Hermes runtime.
 
+## Contact
+
+TecAdRise: [info@tecadrise.ai](mailto:info@tecadrise.ai)
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
