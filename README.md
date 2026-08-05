@@ -16,6 +16,7 @@ Hermes stores agent setup across many files and surfaces (config YAML, env, soul
 ## Why this exists
 
 - Hermes configuration is powerful but easy to lose track of across profiles and folders.
+- You can schedule sequential agent tasks (n8n/make.com style) directly from canvas.
 - Editing raw files works for experts; everyone else benefits from a single place that maps UI blocks to live Hermes APIs.
 - You can keep Hermes wherever it already runs (WSL, Linux server, LAN host) and point Canvas at it from Windows or another machine.
 
