@@ -24,7 +24,7 @@ STATIC = ROOT / "static"
 DATA_DIR = ROOT / "data"
 CONFIG_PATH = DATA_DIR / "hermes-canvas.json"
 
-app = FastAPI(title="Hermes Canvas", version="0.1.0")
+app = FastAPI(title="Hermes Agent Canvas", version="0.1.0")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 # Live attach state (desktop-style remote connection).
