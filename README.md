@@ -11,9 +11,7 @@ Hermes stores agent setup across many files and surfaces (config YAML, env, soul
 
 ## Demo
 
-[![Hermes Agent Canvas demo](media/demo-preview.gif)](https://github.com/tecadrise-ai/hermes-agent-canvas/releases/download/demo/hermes-agent-canvas.mp4)
-
-Click the preview above for the full video, or download: [hermes-agent-canvas.mp4](https://github.com/tecadrise-ai/hermes-agent-canvas/releases/download/demo/hermes-agent-canvas.mp4).
+<video src="https://github.com/user-attachments/assets/9784f65e-e5e1-4e88-b600-11b848dc5242" controls playsinline width="100%"></video>
 
 ## Why this exists
 
