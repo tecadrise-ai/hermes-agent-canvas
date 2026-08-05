@@ -9,6 +9,12 @@ Hermes stores agent setup across many files and surfaces (config YAML, env, soul
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Stack](https://img.shields.io/badge/stack-FastAPI_%2B_vanilla_JS-0ea5e9)
 
+## Demo
+
+<video src="media/hermes-agent-canvas.mp4" controls muted playsinline width="100%"></video>
+
+If the player does not show, open the file directly: [hermes-agent-canvas.mp4](media/hermes-agent-canvas.mp4).
+
 ## Why this exists
 
 - Hermes configuration is powerful but easy to lose track of across profiles and folders.
