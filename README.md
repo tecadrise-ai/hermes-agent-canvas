@@ -6,7 +6,7 @@ Hermes stores agent setup across many files and surfaces (config YAML, env, soul
 
 > **Attach-only UI.** Canvas connects to a **local or remote Hermes gateway** that is already running. It does **not** spawn or manage the Hermes process for you (same idea as Hermes Desktop remote gateway attach: base URL + session token).
 
-![License](https://img.shields.io/badge/license-see_repo-lightgrey)
+![License](https://img.shields.io/badge/license-MIT-green)
 ![Stack](https://img.shields.io/badge/stack-FastAPI_%2B_vanilla_JS-0ea5e9)
 
 ## Why this exists
@@ -123,7 +123,7 @@ hermes-agent-canvas/
 
 ## License
 
-See repository license file if present; otherwise all rights reserved by the author until a license is added.
+MIT. See [LICENSE](LICENSE).
 
 ---
 
